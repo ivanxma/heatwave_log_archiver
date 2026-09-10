@@ -191,6 +191,13 @@ def dashboard():
         partitions, rows, total_rows, error = [], [], 0, str(exc)
     source_options = [*config.log_types, *(f"custom:{item['name']}" for item in config.custom_sources)]
     job_state = load_state()
+    execution_page = max(1, request.args.get("execution_page", 1, type=int))
+    execution_page_size = request.args.get("execution_page_size", 25, type=int)
+    if execution_page_size not in {25, 50, 100}:
+        execution_page_size = 25
+    execution_total = len(job_state.get("history", []))
+    execution_start = (execution_page - 1) * execution_page_size
+    execution_history = list(job_state.get("history", []))[execution_start:execution_start + execution_page_size]
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     activity = []
     for event in reversed(job_state.get("history", [])):
@@ -200,7 +207,7 @@ def dashboard():
                 activity.append({"time": when.strftime("%H:%M"), "count": int(event.get("copied", 0) or 0), "status": event.get("status", "")})
         except (KeyError, ValueError, TypeError):
             continue
-    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, activity=activity, active_menu="archive")
+    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, execution_history=execution_history, execution_total=execution_total, execution_page=execution_page, execution_page_size=execution_page_size, activity=activity, active_menu="archive")
 
 
 @app.get("/archive-export.csv")
@@ -222,6 +229,22 @@ def partitions_export_csv():
     writer.writeheader()
     writer.writerows(list_partitions(ArchiveConfig.from_env(resolve_source_secret=False)))
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=archive-partitions.csv"})
+
+
+@app.get("/execution-history-export.csv")
+@login_required
+def execution_history_export_csv():
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=("time", "trigger", "status", "copied", "source_log_types", "partitions_added", "partitions_dropped", "detail"))
+    writer.writeheader()
+    for event in load_state().get("history", []):
+        writer.writerow({
+            "time": event.get("time", ""), "trigger": event.get("trigger", "Scheduled service"), "status": event.get("status", ""),
+            "copied": event.get("copied", ""), "source_log_types": ", ".join(event.get("source_log_types", [])) or event.get("log_type", ""),
+            "partitions_added": ", ".join(event.get("partitions_added", [])), "partitions_dropped": ", ".join(event.get("partitions_dropped", [])),
+            "detail": event.get("error", "Completed"),
+        })
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=archive-execution-history.csv"})
 
 
 @app.route("/configuration", methods=["GET", "POST"])

@@ -19,6 +19,24 @@
     [...table.tHead.rows[0].cells].forEach((head, index) => {
       head.dataset.original = String(index);
       head.draggable = true;
+      if (head.hasAttribute('data-sort')) {
+        head.addEventListener('click', (event) => {
+          if (event.target.closest('.column-resize')) return;
+          const body = table.tBodies[0];
+          if (!body) return;
+          const columnIndex = [...table.tHead.rows[0].cells].indexOf(head);
+          const ascending = head.dataset.sortDirection !== 'asc';
+          [...table.tHead.rows[0].cells].forEach((cell) => { delete cell.dataset.sortDirection; });
+          head.dataset.sortDirection = ascending ? 'asc' : 'desc';
+          [...body.rows].sort((left, right) => {
+            const a = left.cells[columnIndex]?.textContent.trim() || '';
+            const b = right.cells[columnIndex]?.textContent.trim() || '';
+            const numericA = Number(a.replaceAll(',', '')), numericB = Number(b.replaceAll(',', ''));
+            const compare = !Number.isNaN(numericA) && !Number.isNaN(numericB) ? numericA - numericB : a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+            return ascending ? compare : -compare;
+          }).forEach((row) => body.append(row));
+        });
+      }
       head.addEventListener('dragstart', (event) => event.dataTransfer.setData('text/plain', String(index)));
       head.addEventListener('dragover', (event) => event.preventDefault());
       head.addEventListener('drop', (event) => { event.preventDefault(); const from = Number(event.dataTransfer.getData('text/plain')); const to = [...table.tHead.rows[0].cells].indexOf(head); if (from !== to) { moveColumn(table, from, to); save(); } });
