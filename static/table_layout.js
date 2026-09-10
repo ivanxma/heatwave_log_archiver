@@ -73,25 +73,29 @@ document.querySelectorAll('[data-tab-view]').forEach((view) => {
     const context = canvas.getContext('2d');
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-    context.strokeStyle = '#cbd5e1';
-    context.beginPath(); context.moveTo(36, 145); context.lineTo(width - 12, 145); context.stroke();
+    const left = 54, right = width - 14, top = 22, bottom = 142;
+    context.strokeStyle = '#94a3b8'; context.lineWidth = 1;
+    context.beginPath(); context.moveTo(left, top); context.lineTo(left, bottom); context.lineTo(right, bottom); context.stroke();
     if (!activity.length) {
       context.fillStyle = '#64748b'; context.font = '14px system-ui';
-      context.fillText('No archive executions recorded in the last 24 hours.', 36, 86);
+      context.fillText('No archive executions recorded in the last 24 hours.', left, 86);
       return;
     }
     const maximum = Math.max(1, ...activity.map((item) => Number(item.count) || 0));
-    const slot = (width - 52) / activity.length;
+    const slot = (right - left) / activity.length;
+    context.font = '11px system-ui'; context.fillStyle = '#475569'; context.strokeStyle = '#e2e8f0';
+    [0, 0.5, 1].forEach((fraction) => { const y = bottom - fraction * (bottom - top); context.beginPath(); context.moveTo(left, y); context.lineTo(right, y); context.stroke(); context.fillText(String(Math.round(maximum * fraction)), 8, y + 4); });
+    context.save(); context.translate(13, 94); context.rotate(-Math.PI / 2); context.fillText('Records archived', 0, 0); context.restore();
     activity.forEach((item, index) => {
       const count = Number(item.count) || 0;
-      const barHeight = Math.max(count ? 3 : 0, (count / maximum) * 110);
+      const barHeight = Math.max(count ? 3 : 0, (count / maximum) * (bottom - top));
       context.fillStyle = item.status === 'Succeeded' ? '#b91c1c' : '#94a3b8';
-      context.fillRect(38 + index * slot, 145 - barHeight, Math.max(2, slot - 3), barHeight);
+      context.fillRect(left + index * slot, bottom - barHeight, Math.max(2, slot - 3), barHeight);
     });
     context.fillStyle = '#475569'; context.font = '11px system-ui';
-    context.fillText('0', 12, 148); context.fillText(String(maximum), 4, 33);
-    context.fillText(activity[0].time || '', 38, 165);
-    if (activity.length > 1) context.fillText(activity[activity.length - 1].time || '', width - 45, 165);
+    context.fillText(activity[0].time || '', left, 160);
+    if (activity.length > 1) context.fillText(activity[activity.length - 1].time || '', right - 34, 160);
+    context.fillText('Time (UTC)', Math.max(left, (right + left) / 2 - 24), 177);
   };
   requestAnimationFrame(draw);
   window.addEventListener('resize', draw);
