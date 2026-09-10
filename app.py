@@ -272,7 +272,12 @@ def configuration():
             save_settings(original)
             flash(f"Configuration was not accepted: {exc}", "error")
     settings = _settings()
-    return render_dashboard("configuration.html", settings=settings, config=ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False), source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), active_menu="configuration")
+    try:
+        config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
+    except ValueError as exc:
+        config = None
+        flash(f"Existing configuration needs migration: {exc}. Edit or replace the affected mapping.", "error")
+    return render_dashboard("configuration.html", settings=settings, config=config, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), active_menu="configuration")
 
 
 _ENTITY_FIELDS = {
