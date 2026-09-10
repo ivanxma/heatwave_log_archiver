@@ -13,7 +13,7 @@ from functools import wraps
 from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
 from modules.archive_service import drop_partition, ensure_future_partitions, ensure_schema, fetch_archive_page, list_partitions, recent_rows, run_archive_cycle, selected_partitions_zip, truncate_partition
-from modules.config import ArchiveConfig, _settings, save_settings, source_type_for
+from modules.config import ArchiveConfig, _settings, config_file, save_settings, source_type_for
 from modules.job_state import load_state, record as record_job_state
 from modules.mysql_util import test_mysql_connection
 from modules.profile_store import ensure_profile_store, get_profile_by_name, load_profiles, save_profile_from_form
