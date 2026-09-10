@@ -172,6 +172,28 @@ class ArchiveConfig:
             archive_db=archive_table.get("archive_db") or mapping.get("archive_db") or self.archive_db, archive_table=archive_table.get("archive_table") or mapping.get("archive_table") or self.archive_table,
         )
 
+    def for_archive_table(self, archive_table_name: str) -> "ArchiveConfig":
+        """Resolve one named archive destination for read and partition views."""
+        table = next((item for item in self.archive_tables if item.get("name") == archive_table_name), None)
+        if not table:
+            raise ValueError("Select a configured archive table.")
+        connection_name = table.get("connection", "")
+        connection = next((item for item in self.archive_connections if item.get("name") == connection_name), None)
+        if not connection:
+            raise ValueError("The selected archive table has no valid archive connection.")
+        archive_user, archive_password = vault_credential(connection.get("secret_ocid", ""), connection.get("user", ""))
+        return replace(
+            self,
+            archive_host=connection.get("host") or self.archive_host,
+            archive_port=int(connection.get("port") or self.archive_port),
+            archive_user=archive_user,
+            archive_password=archive_password,
+            archive_secret_ocid=connection.get("secret_ocid", ""),
+            archive_socket=connection.get("socket") or self.archive_socket,
+            archive_db=table.get("archive_db") or self.archive_db,
+            archive_table=table.get("archive_table") or self.archive_table,
+        )
+
 
 def save_settings(settings: dict[str, object]) -> None:
     """Atomically persist server-side settings (including DB passwords) with 0600 mode."""

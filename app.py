@@ -167,6 +167,12 @@ def logout():
     return redirect(url_for("login"))
 
 
+def _archive_view_config(archive_table_name: str) -> ArchiveConfig:
+    """Return the selected archive destination without resolving source credentials."""
+    config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
+    return config.for_archive_table(archive_table_name) if archive_table_name else ArchiveConfig.from_env(resolve_source_secret=False)
+
+
 @app.route("/")
 @login_required
 def dashboard():
@@ -179,6 +185,7 @@ def dashboard():
     page_size = request.args.get("page_size", 50, type=int)
     selected_partition = request.args.get("partition", "")
     selected_source = request.args.get("source", "")
+    selected_archive_table = request.args.get("archive_table", "")
     selected_tab = request.args.get("tab", "summary")
     if selected_tab not in {"summary", "entries", "partitions"}:
         selected_tab = "summary"
@@ -187,11 +194,11 @@ def dashboard():
         # Summary is status-only: do not contact the archive DB merely to open it.
         # Entries needs rows and partition choices; Partitions needs only metadata.
         if selected_tab == "entries":
-            archive_config = ArchiveConfig.from_env(resolve_source_secret=False)
+            archive_config = _archive_view_config(selected_archive_table)
             partitions = list_partitions(archive_config)
             rows, total_rows = fetch_archive_page(archive_config, page, page_size, selected_partition, selected_source)
         elif selected_tab == "partitions":
-            partitions = list_partitions(ArchiveConfig.from_env(resolve_source_secret=False))
+            partitions = list_partitions(_archive_view_config(selected_archive_table))
     except Exception as exc:
         partitions, rows, total_rows, error = [], [], 0, str(exc)
     source_options = [*config.log_types, *(f"custom:{item['name']}" for item in config.custom_sources)]
@@ -212,13 +219,13 @@ def dashboard():
                 activity.append({"time": when.strftime("%H:%M"), "count": int(event.get("copied", 0) or 0), "status": event.get("status", "")})
         except (KeyError, ValueError, TypeError):
             continue
-    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, execution_history=execution_history, execution_total=execution_total, execution_page=execution_page, execution_page_size=execution_page_size, activity=activity, active_menu="archive")
+    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_archive_table=selected_archive_table, archive_table_options=config.archive_tables, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, execution_history=execution_history, execution_total=execution_total, execution_page=execution_page, execution_page_size=execution_page_size, activity=activity, active_menu="archive")
 
 
 @app.get("/archive-export.csv")
 @login_required
 def archive_export_csv():
-    rows = recent_rows(ArchiveConfig.from_env(resolve_source_secret=False), 500)
+    rows = recent_rows(_archive_view_config(request.args.get("archive_table", "")), 500)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=("event_time", "log_type", "payload", "archived_at"))
     writer.writeheader()
@@ -232,7 +239,7 @@ def partitions_export_csv():
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=("partition_name", "boundary", "table_rows", "data_length", "create_time"))
     writer.writeheader()
-    writer.writerows(list_partitions(ArchiveConfig.from_env(resolve_source_secret=False)))
+    writer.writerows(list_partitions(_archive_view_config(request.args.get("archive_table", ""))))
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=archive-partitions.csv"})
 
 
@@ -449,46 +456,50 @@ def run_now():
 @app.post("/partitions/ensure")
 @profile_manager_required
 def partitions_ensure():
+    selected_archive_table = request.form.get("archive_table", "")
     try:
-        ensure_schema(ArchiveConfig.from_env(resolve_source_secret=False))
+        ensure_schema(_archive_view_config(selected_archive_table))
         flash("Archive schema and future partitions are ready.", "success")
     except Exception as exc:
         flash(f"Partition maintenance failed: {exc}", "error")
-    return redirect(url_for("dashboard", tab="partitions"))
+    return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
 
 
 @app.post("/partitions/prepare")
 @profile_manager_required
 def partitions_prepare():
+    selected_archive_table = request.form.get("archive_table", "")
     try:
         months = max(1, min(int(request.form.get("months_ahead", "2")), 24))
-        added = ensure_future_partitions(ArchiveConfig.from_env(resolve_source_secret=False), months)
+        added = ensure_future_partitions(_archive_view_config(selected_archive_table), months)
         flash(f"Future partition preparation completed; {len(added)} partition(s) added.", "success")
     except Exception as exc:
         flash(f"Future partition preparation failed: {exc}", "error")
-    return redirect(url_for("dashboard", tab="partitions"))
+    return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
 
 
 @app.post("/partitions/<partition_name>/truncate")
 @profile_manager_required
 def partition_truncate(partition_name: str):
+    selected_archive_table = request.form.get("archive_table", "")
     try:
-        truncate_partition(ArchiveConfig.from_env(resolve_source_secret=False), partition_name)
+        truncate_partition(_archive_view_config(selected_archive_table), partition_name)
         flash(f"Partition {partition_name} was emptied.", "success")
     except Exception as exc:
         flash(f"Could not empty partition: {exc}", "error")
-    return redirect(url_for("dashboard", tab="partitions"))
+    return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
 
 
 @app.post("/partitions/<partition_name>/drop")
 @profile_manager_required
 def partition_drop(partition_name: str):
+    selected_archive_table = request.form.get("archive_table", "")
     try:
-        drop_partition(ArchiveConfig.from_env(resolve_source_secret=False), partition_name)
+        drop_partition(_archive_view_config(selected_archive_table), partition_name)
         flash(f"Partition {partition_name} was deleted.", "success")
     except Exception as exc:
         flash(f"Could not delete partition: {exc}", "error")
-    return redirect(url_for("dashboard", tab="partitions"))
+    return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
 
 
 @app.post("/partitions/bulk")
@@ -496,34 +507,36 @@ def partition_drop(partition_name: str):
 def partitions_bulk():
     action = request.form.get("action")
     names = request.form.getlist("partitions")
+    selected_archive_table = request.form.get("archive_table", "")
     if not names:
         flash("Select at least one monthly partition.", "error")
-        return redirect(url_for("dashboard", tab="partitions"))
+        return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
     try:
         operation = truncate_partition if action == "empty" else drop_partition if action == "delete" else None
         if not operation:
             raise ValueError("Select a valid partition action.")
         for name in names:
-            operation(ArchiveConfig.from_env(resolve_source_secret=False), name)
+            operation(_archive_view_config(selected_archive_table), name)
         flash(f"{len(names)} partition(s) {('emptied' if action == 'empty' else 'deleted')}.", "success")
     except Exception as exc:
         flash(f"Partition action failed: {exc}", "error")
-    return redirect(url_for("dashboard", tab="partitions"))
+    return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
 
 
 @app.post("/partitions/download")
 @profile_manager_required
 def partitions_download():
     names = request.form.getlist("partitions")
+    selected_archive_table = request.form.get("archive_table", "")
     if not names:
         flash("Select at least one monthly partition to download.", "error")
-        return redirect(url_for("dashboard", tab="partitions"))
+        return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
     try:
-        payload = selected_partitions_zip(ArchiveConfig.from_env(resolve_source_secret=False), names)
+        payload = selected_partitions_zip(_archive_view_config(selected_archive_table), names)
         return Response(payload, mimetype="application/zip", headers={"Content-Disposition": "attachment; filename=selected-archive-partitions.zip"})
     except Exception as exc:
         flash(f"Partition download failed: {exc}", "error")
-        return redirect(url_for("dashboard", tab="partitions"))
+        return redirect(url_for("dashboard", tab="partitions", archive_table=selected_archive_table))
 
 
 def render_dashboard(page_template: str, **context):
