@@ -19,7 +19,13 @@ from modules.profile_store import ensure_profile_store, get_profile_by_name, loa
 from modules.session_store import ServerSessionStore
 
 app = Flask(__name__)
-app.config.update(SECRET_KEY=os.environ.get("ERROR_ARCHIVER_WEB_SECRET", secrets.token_urlsafe(32)), SESSION_COOKIE_NAME="error_archiver_session", SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+app.config.update(
+    SECRET_KEY=os.environ.get("ERROR_ARCHIVER_WEB_SECRET", secrets.token_urlsafe(32)),
+    SESSION_COOKIE_NAME="error_archiver_session",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Strict",
+)
 
 
 @app.after_request
