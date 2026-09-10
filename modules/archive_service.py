@@ -146,7 +146,8 @@ def prune_expired_partitions(config: ArchiveConfig) -> list[str]:
 def run_archive_cycle(config: ArchiveConfig) -> dict[str, object]:
     # Mappings are authoritative. The legacy default pair remains only as a
     # backward-compatible fallback when no mapping has been configured.
-    configs = [config.for_mapping(mapping) for mapping in config.source_mappings] if config.source_mappings else [config]
+    enabled_mappings = [mapping for mapping in config.source_mappings if mapping.get("enabled", "true").lower() in {"true", "1", "yes", "on"}]
+    configs = [config.for_mapping(mapping) for mapping in enabled_mappings] if config.source_mappings else [config]
     def process(item: ArchiveConfig) -> tuple[int, list[str], list[str], dict[str, str]]:
         ensure_schema(item)
         item_copied, item_cursors = archive_error_log(item)
@@ -158,7 +159,7 @@ def run_archive_cycle(config: ArchiveConfig) -> dict[str, object]:
             added.extend(item_added)
             dropped.extend(item_dropped)
             cursors.update(item_cursors)
-    source_types = [f"mapping:{mapping['name']}" for mapping in config.source_mappings] if config.source_mappings else list(config.log_types)
+    source_types = [f"mapping:{mapping['name']}" for mapping in enabled_mappings] if config.source_mappings else list(config.log_types)
     return {"copied": copied, "partitions_added": added, "partitions_dropped": dropped, "source_cursors": cursors, "source_log_types": source_types}
 
 

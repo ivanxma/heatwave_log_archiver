@@ -49,6 +49,10 @@ class ArchiveConfig:
     custom_timestamp_column: str
     custom_sources: tuple[dict[str, str], ...]
     source_mappings: tuple[dict[str, str], ...]
+    source_connections: tuple[dict[str, str], ...]
+    archive_connections: tuple[dict[str, str], ...]
+    source_tables: tuple[dict[str, str], ...]
+    archive_tables: tuple[dict[str, str], ...]
     source_host: str
     source_port: int
     source_user: str
@@ -79,6 +83,10 @@ class ArchiveConfig:
         log_types = tuple(item.strip() for item in raw_types.split(",") if item.strip())
         custom_sources = settings.get("custom_sources", []) if isinstance(settings.get("custom_sources", []), list) else []
         source_mappings = settings.get("source_mappings", []) if isinstance(settings.get("source_mappings", []), list) else []
+        source_connections = settings.get("source_connections", []) if isinstance(settings.get("source_connections", []), list) else []
+        archive_connections = settings.get("archive_connections", []) if isinstance(settings.get("archive_connections", []), list) else []
+        source_tables = settings.get("source_tables", []) if isinstance(settings.get("source_tables", []), list) else []
+        archive_tables = settings.get("archive_tables", []) if isinstance(settings.get("archive_tables", []), list) else []
         if _value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings):
             custom_sources = [*custom_sources, {"name": "custom", "source": _value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings), "timestamp_column": _value("ERROR_ARCHIVER_CUSTOM_TIMESTAMP_COLUMN", "event_time", settings)}]
         source_secret_ocid = _value("ERROR_ARCHIVER_SOURCE_SECRET_OCID", settings=settings)
@@ -97,6 +105,10 @@ class ArchiveConfig:
             custom_timestamp_column=_value("ERROR_ARCHIVER_CUSTOM_TIMESTAMP_COLUMN", "event_time", settings),
             custom_sources=tuple({"name": str(item.get("name", "custom")), "source": str(item.get("source", "")), "timestamp_column": str(item.get("timestamp_column", "event_time"))} for item in custom_sources if isinstance(item, dict)),
             source_mappings=tuple({key: str(value) for key, value in item.items()} for item in source_mappings if isinstance(item, dict)),
+            source_connections=tuple({key: str(value) for key, value in item.items()} for item in source_connections if isinstance(item, dict)),
+            archive_connections=tuple({key: str(value) for key, value in item.items()} for item in archive_connections if isinstance(item, dict)),
+            source_tables=tuple({key: str(value) for key, value in item.items()} for item in source_tables if isinstance(item, dict)),
+            archive_tables=tuple({key: str(value) for key, value in item.items()} for item in archive_tables if isinstance(item, dict)),
             source_host=source_host,
             source_port=_positive_int("ERROR_ARCHIVER_SOURCE_PORT", 3306, settings),
             source_user=source_user, source_password=source_password, source_secret_ocid=source_secret_ocid,
@@ -125,25 +137,37 @@ class ArchiveConfig:
         for source in config.custom_sources:
             if not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", source["source"]) or not re.fullmatch(r"[A-Za-z0-9_$]+", source["timestamp_column"]):
                 raise ValueError("Each custom source requires schema.table and a timestamp column")
+        mapped_sources: set[tuple[str, str]] = set()
         for mapping in config.source_mappings:
-            if not mapping.get("name") or not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", mapping.get("source", "")) or not re.fullmatch(r"[A-Za-z0-9_$]+", mapping.get("timestamp_column", "")):
+            source_table = next((item for item in config.source_tables if item.get("name") == mapping.get("source_table")), mapping)
+            source_name = source_table.get("source") or mapping.get("source", "")
+            timestamp = source_table.get("timestamp_column") or mapping.get("timestamp_column", "")
+            if not mapping.get("name") or not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", source_name) or not re.fullmatch(r"[A-Za-z0-9_$]+", timestamp):
                 raise ValueError("Each source mapping requires a name, schema.table/view, and timestamp column")
+            source_identity = (source_table.get("connection") or mapping.get("source_connection") or mapping.get("source_host", ""), source_name)
+            if source_identity in mapped_sources:
+                raise ValueError("A source connection/table may map to only one archive table")
+            mapped_sources.add(source_identity)
         return config
 
     def for_mapping(self, mapping: dict[str, str]) -> "ArchiveConfig":
         """Resolve one source-to-archive mapping only when the worker executes it."""
-        source_user = mapping.get("source_user") or self.source_user
-        archive_user = mapping.get("archive_user") or self.archive_user
-        source_secret = mapping.get("source_secret_ocid") or self.source_secret_ocid
-        archive_secret = mapping.get("archive_secret_ocid") or self.archive_secret_ocid
+        source_table = next((item for item in self.source_tables if item.get("name") == mapping.get("source_table")), mapping)
+        archive_table = next((item for item in self.archive_tables if item.get("name") == mapping.get("archive_table_ref")), mapping)
+        source_record = next((item for item in self.source_connections if item.get("name") == source_table.get("connection") or item.get("name") == mapping.get("source_connection")), {})
+        archive_record = next((item for item in self.archive_connections if item.get("name") == archive_table.get("connection") or item.get("name") == mapping.get("archive_connection")), {})
+        source_user = source_record.get("user") or mapping.get("source_user") or self.source_user
+        archive_user = archive_record.get("user") or mapping.get("archive_user") or self.archive_user
+        source_secret = source_record.get("secret_ocid") or mapping.get("source_secret_ocid") or self.source_secret_ocid
+        archive_secret = archive_record.get("secret_ocid") or mapping.get("archive_secret_ocid") or self.archive_secret_ocid
         source_user, source_password = vault_credential(source_secret, source_user)
         archive_user, archive_password = vault_credential(archive_secret, archive_user)
         return replace(
             self,
-            log_types=(), custom_sources=({"name": mapping["name"], "source": mapping["source"], "timestamp_column": mapping["timestamp_column"]},),
-            source_host=mapping.get("source_host") or self.source_host, source_port=int(mapping.get("source_port") or self.source_port), source_user=source_user, source_password=source_password, source_secret_ocid=source_secret, source_socket=mapping.get("source_socket") or self.source_socket,
-            archive_host=mapping.get("archive_host") or self.archive_host, archive_port=int(mapping.get("archive_port") or self.archive_port), archive_user=archive_user, archive_password=archive_password, archive_secret_ocid=archive_secret, archive_socket=mapping.get("archive_socket") or self.archive_socket,
-            archive_db=mapping.get("archive_db") or self.archive_db, archive_table=mapping.get("archive_table") or self.archive_table,
+            log_types=(), custom_sources=({"name": mapping["name"], "source": source_table.get("source") or mapping["source"], "timestamp_column": source_table.get("timestamp_column") or mapping["timestamp_column"]},),
+            source_host=source_record.get("host") or mapping.get("source_host") or self.source_host, source_port=int(source_record.get("port") or mapping.get("source_port") or self.source_port), source_user=source_user, source_password=source_password, source_secret_ocid=source_secret, source_socket=source_record.get("socket") or mapping.get("source_socket") or self.source_socket,
+            archive_host=archive_record.get("host") or mapping.get("archive_host") or self.archive_host, archive_port=int(archive_record.get("port") or mapping.get("archive_port") or self.archive_port), archive_user=archive_user, archive_password=archive_password, archive_secret_ocid=archive_secret, archive_socket=archive_record.get("socket") or mapping.get("archive_socket") or self.archive_socket,
+            archive_db=archive_table.get("archive_db") or mapping.get("archive_db") or self.archive_db, archive_table=archive_table.get("archive_table") or mapping.get("archive_table") or self.archive_table,
         )
 
 
