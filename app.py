@@ -93,12 +93,14 @@ def profile_manager_required(view):
 @app.route("/initial-setup", methods=["GET", "POST"])
 @profile_manager_required
 def initial_setup():
-    """First-login confirmation before service credentials and archive destination are saved."""
+    """First-login confirmation before non-secret settings and Vault references are saved."""
     record = SERVER_SESSIONS.get(session.get("connection_id"))
     profile = record["profile"]
     if request.method == "POST":
         if request.form.get("confirm_setup") != "yes":
             flash("Confirm archive setup before continuing.", "error")
+        elif not request.form.get("source_secret_ocid", "").strip() or not request.form.get("archive_secret_ocid", "").strip():
+            flash("Enter both OCI Vault Secret OCIDs. Passwords are retrieved by the VM at runtime and are not stored by this application.", "error")
         else:
             settings = _settings()
             archive_db = request.form.get("archive_db", "").strip()
@@ -130,7 +132,7 @@ def initial_setup():
             except Exception as exc:
                 save_settings(previous)
                 flash(f"Setup did not complete: {exc}", "error")
-    return render_dashboard("initial_setup.html", profile=profile, record=record, active_menu="setup")
+    return render_dashboard("initial_setup.html", profile=profile, record=record, settings=_settings(), active_menu="setup")
 
 
 @app.route("/logout")

@@ -1,19 +1,23 @@
 {% extends 'base.html' %}{% block content %}
-<section class="page-heading"><div><p class="eyebrow">First-login setup</p><h1>Confirm archive destination</h1><p>Your selected profile is <strong>{{ current_profile_name }}</strong>. The source job connection will use this profile and your server-held MySQL credential.</p></div></section>
+<section class="page-heading"><div><p class="eyebrow">First-login setup</p><h1>Confirm archive destination</h1><p>Your selected profile is <strong>{{ current_profile_name }}</strong>. The scheduled service retrieves source and archive credentials from OCI Vault at runtime; passwords are never entered or stored here.</p></div></section>
 <form method="post" class="config setup-form" autocomplete="off">
+  <fieldset><legend>OCI Vault credentials</legend>
+    <label>Source Vault Secret OCID *<input name="source_secret_ocid" value="{{ settings.get('source_secret_ocid', '') }}" placeholder="ocid1.vaultsecret..." required></label>
+    <label>Archive Vault Secret OCID *<input name="archive_secret_ocid" value="{{ settings.get('archive_secret_ocid', '') }}" placeholder="ocid1.vaultsecret..." required></label>
+    <p class="field-help">Each secret may contain a password or a JSON credential object. The VM instance principal reads the secret only when a job runs.</p>
+  </fieldset>
   <fieldset><legend>Archive destination</legend>
-    <label>Archive host *<input name="archive_host" value="{{ profile.host or '127.0.0.1' }}" required></label>
-    <label>Archive port *<input name="archive_port" type="number" min="1" max="65535" value="{{ profile.port or 3306 }}" required></label>
-    <label>Archive socket (optional)<input name="archive_socket" value="{{ profile.socket or '' }}"></label>
-    <label>Archive user *<input name="archive_user" value="{{ current_username }}" required></label>
-    <label>Archive password <input name="archive_password" type="password" placeholder="Uses login password when blank" autocomplete="new-password"></label>
-    <label>Archive database *<input name="archive_db" value="archivedb" required></label>
-    <label>Archive table *<input name="archive_table" value="performance_schema_error_log_archive" required></label>
+    <label>Archive host *<input name="archive_host" value="{{ settings.get('archive_host', profile.host or '127.0.0.1') }}" required></label>
+    <label>Archive port *<input name="archive_port" type="number" min="1" max="65535" value="{{ settings.get('archive_port', profile.port or 3306) }}" required></label>
+    <label>Archive socket (optional)<input name="archive_socket" value="{{ settings.get('archive_socket', profile.socket or '') }}"></label>
+    <label>Archive user *<input name="archive_user" value="{{ settings.get('archive_user', current_username) }}" required></label>
+    <label>Archive database *<input name="archive_db" value="{{ settings.get('archive_db', 'archivedb') }}" required></label>
+    <label>Archive table *<input name="archive_table" value="{{ settings.get('archive_table', 'performance_schema_error_log_archive') }}" required></label>
   </fieldset>
   <fieldset><legend>Job policy</legend>
-    <label>Run every *<input name="schedule" value="5min" required></label>
-    <label>Retention months *<input name="retention_months" type="number" min="1" value="12" required></label>
-    <label>Rows per cycle *<input name="batch_size" type="number" min="1" value="5000" required></label>
+    <label>Run every *<input name="schedule" value="{{ settings.get('schedule', '5min') }}" required></label>
+    <label>Retention months *<input name="retention_months" type="number" min="1" value="{{ settings.get('retention_months', 12) }}" required></label>
+    <label>Rows per cycle *<input name="batch_size" type="number" min="1" value="{{ settings.get('batch_size', 5000) }}" required></label>
   </fieldset>
   <label class="checkbox-field"><input type="checkbox" name="confirm_setup" value="yes" required> I confirm that this service may create the archive database/table and monthly partitions.</label>
   <div class="form-actions"><button>Confirm and create archive</button></div>
