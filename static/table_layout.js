@@ -63,12 +63,13 @@ document.querySelectorAll('[data-tab-view]').forEach((view) => {
   let activity;
   try { activity = JSON.parse(canvas.dataset.activity || '[]'); } catch (_) { activity = []; }
   const draw = () => {
-    const width = Math.max(320, Math.floor(canvas.parentElement.getBoundingClientRect().width - 2));
+    const width = Math.max(320, Math.floor(canvas.parentElement.getBoundingClientRect().width - 50));
     const height = 180;
     const ratio = window.devicePixelRatio || 1;
     canvas.width = width * ratio;
     canvas.height = height * ratio;
     canvas.style.width = `${width}px`;
+    canvas.style.margin = '0 24px';
     canvas.style.height = `${height}px`;
     const context = canvas.getContext('2d');
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
