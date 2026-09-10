@@ -313,7 +313,10 @@ def configuration():
     except ValueError as exc:
         config = None
         flash(f"Existing configuration needs migration: {exc}. Edit or replace the affected mapping.", "error")
-    return render_dashboard("configuration.html", settings=settings, config=config, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), active_menu="configuration")
+    selected_config_tab = request.args.get("config_tab", "source-connections")
+    if selected_config_tab not in _ENTITY_FIELDS:
+        selected_config_tab = "source-connections"
+    return render_dashboard("configuration.html", settings=settings, config=config, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), selected_config_tab=selected_config_tab, active_menu="configuration")
 
 
 _ENTITY_FIELDS = {
@@ -355,11 +358,11 @@ def configuration_entity(kind: str, index: int):
         settings[key] = updated
         try:
             save_settings(settings); ArchiveConfig.from_env(False, False)
-            flash("Configuration record saved.", "success"); return redirect(url_for("configuration"))
+            flash("Configuration record saved.", "success"); return redirect(url_for("configuration", config_tab=request.form.get("config_tab", "source-connections")))
         except Exception as exc:
             save_settings(original)
             flash(str(exc), "error"); settings = original
-    return render_dashboard("entity_form.html", kind=kind, item=item, index=index, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), active_menu="configuration")
+    return render_dashboard("entity_form.html", kind=kind, item=item, index=index, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), return_tab=request.args.get("config_tab", request.form.get("config_tab", kind)), active_menu="configuration")
 
 
 @app.post("/configuration/<kind>/<int:index>/delete")
@@ -374,7 +377,7 @@ def configuration_entity_delete(kind: str, index: int):
                 flash("Configuration record deleted.", "success")
             except Exception as exc:
                 save_settings(original); flash(f"Deletion was not accepted: {exc}", "error")
-    return redirect(url_for("configuration"))
+    return redirect(url_for("configuration", config_tab=request.form.get("config_tab", "source-connections")))
 
 
 @app.post("/configuration/<kind>/bulk-delete")
@@ -392,7 +395,7 @@ def configuration_entity_bulk_delete(kind: str):
                 save_settings(original); flash(f"Deletion was not accepted: {exc}", "error")
         else:
             flash("Select at least one record.", "error")
-    return redirect(url_for("configuration"))
+    return redirect(url_for("configuration", config_tab=request.form.get("config_tab", "source-connections")))
 
 
 @app.route("/custom-sources/<int:index>", methods=["GET", "POST"])

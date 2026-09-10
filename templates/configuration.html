@@ -12,7 +12,7 @@
 {% macro toolbar(kind, table_id, title) -%}
 <div class="table-toolbar">
   <div class="action-group">
-    <a class="icon-button" href="{{ url_for('configuration_entity', kind=kind, index=-1) }}">Add {{ title }}</a>
+    <a class="icon-button" href="{{ url_for('configuration_entity', kind=kind, index=-1, config_tab=kind) }}">Add {{ title }}</a>
     <button type="button" data-edit-selected data-kind="{{ kind }}" data-table="{{ table_id }}">Edit selected</button>
     <button type="submit" onclick="return confirm('Delete the selected {{ title|lower }} record(s)?')">Delete selected</button>
   </div>
@@ -22,41 +22,41 @@
 </div>
 {%- endmacro %}
 
-<section class="tab-view" data-tab-view>
+<section class="tab-view" data-tab-view data-tab-query="config_tab">
   <div class="tab-list" role="tablist" aria-label="Configuration sections">
-    {% for label, panel, records in [('Source Connection', 'source-connections-panel', source_connections), ('Archive Connection', 'archive-connections-panel', archive_connections), ('Source Tables', 'source-tables-panel', source_tables), ('Archive Tables', 'archive-tables-panel', archive_tables), ('Mapping', 'mappings-panel', source_mappings)] %}
-    <button class="tab {{ 'active' if loop.first else '' }}" role="tab" aria-selected="{{ 'true' if loop.first else 'false' }}" aria-controls="{{ panel }}">{{ label }} <span>{{ records|length }}</span></button>
+    {% for label, panel, records, kind in [('Source Connection', 'source-connections-panel', source_connections, 'source-connections'), ('Archive Connection', 'archive-connections-panel', archive_connections, 'archive-connections'), ('Source Tables', 'source-tables-panel', source_tables, 'source-tables'), ('Archive Tables', 'archive-tables-panel', archive_tables, 'archive-tables'), ('Mapping', 'mappings-panel', source_mappings, 'mappings')] %}
+    <button class="tab {{ 'active' if selected_config_tab == kind else '' }}" role="tab" aria-selected="{{ 'true' if selected_config_tab == kind else 'false' }}" aria-controls="{{ panel }}" data-config-tab="{{ kind }}">{{ label }} <span>{{ records|length }}</span></button>
     {% endfor %}
   </div>
 
-  <div class="tab-panel" id="source-connections-panel">
-    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='source-connections') }}">{{ toolbar('source-connections', 'source-connections-table', 'connection') }}
+  <div class="tab-panel" id="source-connections-panel" {{ 'hidden' if selected_config_tab != 'source-connections' else '' }}>
+    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='source-connections') }}"><input type="hidden" name="config_tab" value="source-connections">{{ toolbar('source-connections', 'source-connections-table', 'connection') }}
       <div class="tablewrap"><table id="source-connections-table" class="listing-table fixed-rows"><thead><tr><th class="selection-column"><input type="checkbox" data-select-all aria-label="Select all source connections"></th><th data-sort>Name</th><th data-sort>Host</th><th data-sort>Port</th><th data-sort>User</th><th data-sort>Socket</th></tr></thead><tbody>{% for item in source_connections %}<tr><td><input type="checkbox" name="selected" value="{{ loop.index0 }}" aria-label="Select {{ item.name }}"></td><td>{{ item.name }}</td><td>{{ item.host }}</td><td>{{ item.port or '3306' }}</td><td>{{ item.user }}</td><td>{{ item.socket or '—' }}</td></tr>{% else %}<tr><td colspan="6">No source connections configured.</td></tr>{% endfor %}</tbody></table></div>
     </form>
   </div>
   <div class="tab-panel" id="archive-connections-panel" hidden>
-    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='archive-connections') }}">{{ toolbar('archive-connections', 'archive-connections-table', 'connection') }}
+    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='archive-connections') }}"><input type="hidden" name="config_tab" value="archive-connections">{{ toolbar('archive-connections', 'archive-connections-table', 'connection') }}
       <div class="tablewrap"><table id="archive-connections-table" class="listing-table fixed-rows"><thead><tr><th class="selection-column"><input type="checkbox" data-select-all aria-label="Select all archive connections"></th><th data-sort>Name</th><th data-sort>Host</th><th data-sort>Port</th><th data-sort>User</th><th data-sort>Socket</th></tr></thead><tbody>{% for item in archive_connections %}<tr><td><input type="checkbox" name="selected" value="{{ loop.index0 }}" aria-label="Select {{ item.name }}"></td><td>{{ item.name }}</td><td>{{ item.host }}</td><td>{{ item.port or '3306' }}</td><td>{{ item.user }}</td><td>{{ item.socket or '—' }}</td></tr>{% else %}<tr><td colspan="6">No archive connections configured.</td></tr>{% endfor %}</tbody></table></div>
     </form>
   </div>
   <div class="tab-panel" id="source-tables-panel" hidden>
-    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='source-tables') }}">{{ toolbar('source-tables', 'source-tables-table', 'source table') }}
+    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='source-tables') }}"><input type="hidden" name="config_tab" value="source-tables">{{ toolbar('source-tables', 'source-tables-table', 'source table') }}
       <div class="tablewrap"><table id="source-tables-table" class="listing-table fixed-rows"><thead><tr><th class="selection-column"><input type="checkbox" data-select-all aria-label="Select all source tables"></th><th data-sort>Name</th><th data-sort>Type</th><th data-sort>Connection</th><th data-sort>Table or view</th><th data-sort>Timestamp column</th></tr></thead><tbody>{% for item in source_tables %}<tr><td><input type="checkbox" name="selected" value="{{ loop.index0 }}" aria-label="Select {{ item.name }}"></td><td>{{ item.name }}</td><td>{{ item.get('source_type', 'custom')|replace('_', ' ')|title }}</td><td>{{ item.connection }}</td><td>{{ item.source }}</td><td>{{ item.timestamp_column }}</td></tr>{% else %}<tr><td colspan="6">No source tables configured.</td></tr>{% endfor %}</tbody></table></div>
     </form>
   </div>
   <div class="tab-panel" id="archive-tables-panel" hidden>
-    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='archive-tables') }}">{{ toolbar('archive-tables', 'archive-tables-table', 'archive table') }}
+    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='archive-tables') }}"><input type="hidden" name="config_tab" value="archive-tables">{{ toolbar('archive-tables', 'archive-tables-table', 'archive table') }}
       <div class="tablewrap"><table id="archive-tables-table" class="listing-table fixed-rows"><thead><tr><th class="selection-column"><input type="checkbox" data-select-all aria-label="Select all archive tables"></th><th data-sort>Name</th><th data-sort>Connection</th><th data-sort>Database</th><th data-sort>Table</th></tr></thead><tbody>{% for item in archive_tables %}<tr><td><input type="checkbox" name="selected" value="{{ loop.index0 }}" aria-label="Select {{ item.name }}"></td><td>{{ item.name }}</td><td>{{ item.connection }}</td><td>{{ item.archive_db }}</td><td>{{ item.archive_table }}</td></tr>{% else %}<tr><td colspan="5">No archive tables configured.</td></tr>{% endfor %}</tbody></table></div>
     </form>
   </div>
   <div class="tab-panel" id="mappings-panel" hidden>
-    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='mappings') }}">{{ toolbar('mappings', 'mappings-table', 'mapping') }}
+    <form method="post" action="{{ url_for('configuration_entity_bulk_delete', kind='mappings') }}"><input type="hidden" name="config_tab" value="mappings">{{ toolbar('mappings', 'mappings-table', 'mapping') }}
       <div class="tablewrap"><table id="mappings-table" class="listing-table fixed-rows"><thead><tr><th class="selection-column"><input type="checkbox" data-select-all aria-label="Select all mappings"></th><th data-sort>Name</th><th data-sort>Source table</th><th data-sort>Archive table</th><th data-sort>State</th></tr></thead><tbody>{% for item in source_mappings %}<tr><td><input type="checkbox" name="selected" value="{{ loop.index0 }}" aria-label="Select {{ item.name }}"></td><td>{{ item.name }}</td><td>{{ item.source_table }}</td><td>{{ item.archive_table_ref }}</td><td>{{ 'Enabled' if item.get('enabled', 'true') != 'false' else 'Disabled' }}</td></tr>{% else %}<tr><td colspan="5">No mappings configured.</td></tr>{% endfor %}</tbody></table></div>
     </form>
   </div>
 </section>
 <script>
 document.querySelectorAll('[data-select-all]').forEach((box) => box.addEventListener('change', () => { box.closest('table').querySelectorAll('tbody input[name="selected"]').forEach((input) => { input.checked = box.checked; }); }));
-document.querySelectorAll('[data-edit-selected]').forEach((button) => button.addEventListener('click', () => { const table = document.getElementById(button.dataset.table); const selected = table.querySelectorAll('tbody input[name="selected"]:checked'); if (selected.length !== 1) { window.alert('Select exactly one record to edit.'); return; } window.location.href = '/configuration/' + encodeURIComponent(button.dataset.kind) + '/' + selected[0].value; }));
+document.querySelectorAll('[data-edit-selected]').forEach((button) => button.addEventListener('click', () => { const table = document.getElementById(button.dataset.table); const selected = table.querySelectorAll('tbody input[name="selected"]:checked'); if (selected.length !== 1) { window.alert('Select exactly one record to edit.'); return; } window.location.href = '/configuration/' + encodeURIComponent(button.dataset.kind) + '/' + selected[0].value + '?config_tab=' + encodeURIComponent(button.dataset.kind); }));
 </script>
 {% endblock %}

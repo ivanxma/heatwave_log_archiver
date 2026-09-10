@@ -3,6 +3,7 @@
 <section>
   <h1>{{ 'Edit' if index >= 0 else 'Add' }} {{ kind.replace('-', ' ')|title }}</h1>
   <form method="post" class="config">
+    <input type="hidden" name="config_tab" value="{{ return_tab }}">
     <fieldset>
       {% if kind in ('source-connections', 'archive-connections') %}
       <label>Name *<input name="name" value="{{ item.get('name', '') }}" required></label>
@@ -35,7 +36,7 @@
       <label class="checkbox-field"><input type="checkbox" name="enabled" {{ 'checked' if item.get('enabled', 'true') != 'false' else '' }}><span>Enable this mapping</span></label>
       {% endif %}
     </fieldset>
-    <div class="form-actions"><button type="submit">Save</button><button type="button" onclick="location.href='{{ url_for('configuration') }}'">Cancel</button></div>
+    <div class="form-actions"><button type="submit">Save</button><button type="button" onclick="location.href='{{ url_for('configuration', config_tab=return_tab) }}'">Cancel</button></div>
   </form>
 </section>
 {% if kind == 'source-tables' %}
