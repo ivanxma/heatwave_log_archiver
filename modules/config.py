@@ -112,11 +112,11 @@ class ArchiveConfig:
             worker_threads=_positive_int("ERROR_ARCHIVER_WORKER_THREADS", 4, settings),
             schedule=_value("ERROR_ARCHIVER_SCHEDULE", "5min", settings),
         )
-        if not config.source_user or not config.archive_user:
+        if not config.source_mappings and (not config.source_user or not config.archive_user):
             raise ValueError("Source and archive users are required")
         if not re.fullmatch(r"[1-9][0-9]*\s*(min|mins|minute|minutes|h|hour|hours)", config.schedule.lower()):
             raise ValueError("ERROR_ARCHIVER_SCHEDULE must look like '5min' or '1hour'")
-        if not config.log_types or any(value not in {"error_log", "slow_log", "general_log"} for value in config.log_types):
+        if not config.source_mappings and (not config.log_types or any(value not in {"error_log", "slow_log", "general_log"} for value in config.log_types)):
             raise ValueError("Select one or more of error_log, slow_log, or general_log")
         if config.custom_source and not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", config.custom_source):
             raise ValueError("Custom source must be a schema.table or schema.view identifier")

@@ -42,7 +42,11 @@ def _mark_success() -> None:
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
-        config = ArchiveConfig.from_env()
+        # A mapping owns its source/archive credentials, so avoid retrieving
+        # unused legacy credentials when mappings are configured.
+        config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
+        if not config.source_mappings:
+            config = ArchiveConfig.from_env()
         if not config.enabled:
             logging.info("archive job disabled")
             record("Disabled")

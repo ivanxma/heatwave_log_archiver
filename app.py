@@ -345,7 +345,9 @@ def archive_setup():
 @profile_manager_required
 def run_now():
     try:
-        config = ArchiveConfig.from_env()
+        config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
+        if not config.source_mappings:
+            config = ArchiveConfig.from_env()
         result = run_archive_cycle(config)
         record_job_state("Succeeded", **result, schedule=config.schedule, log_type=config.log_type, trigger="Web: run now")
         flash(f"Archive cycle completed: {result['copied']} row(s) copied; {len(result['partitions_dropped'])} partition(s) dropped.", "success")
