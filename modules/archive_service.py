@@ -148,6 +148,8 @@ def run_archive_cycle(config: ArchiveConfig) -> dict[str, object]:
     # backward-compatible fallback when no mapping has been configured.
     enabled_mappings = [mapping for mapping in config.source_mappings if mapping.get("enabled", "true").lower() in {"true", "1", "yes", "on"}]
     configs = [config.for_mapping(mapping) for mapping in enabled_mappings] if config.source_mappings else [config]
+    if config.source_mappings and not configs:
+        return {"copied": 0, "partitions_added": [], "partitions_dropped": [], "source_cursors": {}, "source_log_types": []}
     def process(item: ArchiveConfig) -> tuple[int, list[str], list[str], dict[str, str]]:
         ensure_schema(item)
         item_copied, item_cursors = archive_error_log(item)

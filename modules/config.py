@@ -139,6 +139,8 @@ class ArchiveConfig:
                 raise ValueError("Each custom source requires schema.table and a timestamp column")
         mapped_sources: set[tuple[str, str]] = set()
         for mapping in config.source_mappings:
+            if mapping.get("enabled", "true").lower() in {"false", "0", "no", "off"}:
+                continue
             source_table = next((item for item in config.source_tables if item.get("name") == mapping.get("source_table")), mapping)
             source_name = source_table.get("source") or mapping.get("source", "")
             timestamp = source_table.get("timestamp_column") or mapping.get("timestamp_column", "")
