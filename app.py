@@ -167,7 +167,9 @@ def logout():
 def dashboard():
     if not _settings().get("configured"):
         return redirect(url_for("initial_setup"))
-    config = ArchiveConfig.from_env(resolve_source_secret=False)
+    # Rendering a dashboard shell must not contact OCI Vault. Credentials are
+    # resolved only when the selected tab actually queries the archive database.
+    config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
     page = max(1, request.args.get("page", 1, type=int))
     page_size = request.args.get("page_size", 50, type=int)
     selected_partition = request.args.get("partition", "")
@@ -180,10 +182,11 @@ def dashboard():
         # Summary is status-only: do not contact the archive DB merely to open it.
         # Entries needs rows and partition choices; Partitions needs only metadata.
         if selected_tab == "entries":
-            partitions = list_partitions(config)
-            rows, total_rows = fetch_archive_page(config, page, page_size, selected_partition, selected_source)
+            archive_config = ArchiveConfig.from_env(resolve_source_secret=False)
+            partitions = list_partitions(archive_config)
+            rows, total_rows = fetch_archive_page(archive_config, page, page_size, selected_partition, selected_source)
         elif selected_tab == "partitions":
-            partitions = list_partitions(config)
+            partitions = list_partitions(ArchiveConfig.from_env(resolve_source_secret=False))
     except Exception as exc:
         partitions, rows, total_rows, error = [], [], 0, str(exc)
     source_options = [*config.log_types, *(f"custom:{item['name']}" for item in config.custom_sources)]
