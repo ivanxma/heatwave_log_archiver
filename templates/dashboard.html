@@ -8,8 +8,8 @@
 <section class="tab-view" data-tab-view data-dashboard-tabs>
   <div class="tab-list" role="tablist">
     <button class="tab {{ 'active' if selected_tab == 'summary' else '' }}" role="tab" aria-selected="{{ 'true' if selected_tab == 'summary' else 'false' }}" aria-controls="archive-summary" data-tab-name="summary">Summary</button>
-    <button class="tab {{ 'active' if selected_tab == 'entries' else '' }}" role="tab" aria-selected="{{ 'true' if selected_tab == 'entries' else 'false' }}" aria-controls="archive-rows" data-tab-name="entries">Archived entries <span>{{ total_rows }}</span></button>
-    <button class="tab {{ 'active' if selected_tab == 'partitions' else '' }}" role="tab" aria-selected="{{ 'true' if selected_tab == 'partitions' else 'false' }}" aria-controls="partition-list" data-tab-name="partitions">Partitions <span>{{ partitions|length }}</span></button>
+    <button class="tab {{ 'active' if selected_tab == 'entries' else '' }}" role="tab" aria-selected="{{ 'true' if selected_tab == 'entries' else 'false' }}" aria-controls="archive-rows" data-tab-name="entries">Archived entries{% if selected_tab == 'entries' %} <span>{{ total_rows }}</span>{% endif %}</button>
+    <button class="tab {{ 'active' if selected_tab == 'partitions' else '' }}" role="tab" aria-selected="{{ 'true' if selected_tab == 'partitions' else 'false' }}" aria-controls="partition-list" data-tab-name="partitions">Partitions{% if selected_tab == 'partitions' %} <span>{{ partitions|length }}</span>{% endif %}</button>
   </div>
 
   <div class="tab-panel" id="archive-summary" {{ 'hidden' if selected_tab != 'summary' else '' }}>
@@ -33,5 +33,5 @@
     <form method="post" action="{{ url_for('partitions_bulk') }}"><div class="table-toolbar"><div class="action-group"><button name="action" value="empty">Empty selected</button><button name="action" value="delete">Delete selected</button><button formaction="{{ url_for('partitions_download') }}">Download selected partition</button><label>Prepare future partitions <input name="months_ahead" type="number" value="2"></label><button formaction="{{ url_for('partitions_prepare') }}">Prepare</button></div><a class="icon-button" href="{{ url_for('partitions_export_csv') }}" title="Download table" aria-label="Download table">⇩</a></div><div class="tablewrap"><table class="listing-table"><thead><tr><th></th><th>Partition</th><th>Boundary</th><th>Rows</th><th>Size</th></tr></thead><tbody>{% for p in partitions %}<tr><td>{% if p.partition_name!='p_bootstrap' %}<input class="partition-select" type="checkbox" name="partitions" value="{{ p.partition_name }}">{% endif %}</td><td>{{ p.partition_name }}</td><td>{{ p.boundary }}</td><td>{{ p.table_rows }}</td><td>{{ p.data_length }}</td></tr>{% endfor %}</tbody></table></div></form>
   </div>
 </section>
-<script>document.querySelectorAll('[data-dashboard-tabs] [data-tab-name]').forEach(tab=>tab.addEventListener('click',()=>{const url=new URL(location.href);url.searchParams.set('tab',tab.dataset.tabName);history.replaceState(null,'',url)}));</script>
+<script>document.querySelectorAll('[data-dashboard-tabs] [data-tab-name]').forEach(tab=>tab.addEventListener('click',()=>{if(tab.dataset.tabName==='{{ selected_tab }}')return;const url=new URL(location.href);url.searchParams.set('tab',tab.dataset.tabName);location.assign(url)}));</script>
 {% endblock %}

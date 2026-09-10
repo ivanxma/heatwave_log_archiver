@@ -37,7 +37,9 @@ def prevent_stale_html(response):
     return response
 PROFILE_STORE_PATH = Path(os.environ.get("ERROR_ARCHIVER_PROFILE_STORE", "profiles.json"))
 SERVER_SESSIONS = ServerSessionStore(int(os.environ.get("ERROR_ARCHIVER_SESSION_TTL", "3600")))
-SESSION_HEALTH_CHECK_SECONDS = max(1, int(os.environ.get("ERROR_ARCHIVER_SESSION_HEALTH_CHECK_SECONDS", "30")))
+# Navigation reuses a recent server-side health result. Login and database
+# operations still establish their own live connections when they are needed.
+SESSION_HEALTH_CHECK_SECONDS = max(1, int(os.environ.get("ERROR_ARCHIVER_SESSION_HEALTH_CHECK_SECONDS", "300")))
 ensure_profile_store(PROFILE_STORE_PATH)
 
 
@@ -173,10 +175,15 @@ def dashboard():
     selected_tab = request.args.get("tab", "summary")
     if selected_tab not in {"summary", "entries", "partitions"}:
         selected_tab = "summary"
+    partitions, rows, total_rows, error = [], [], 0, None
     try:
-        partitions = list_partitions(config)
-        rows, total_rows = fetch_archive_page(config, page, page_size, selected_partition, selected_source)
-        error = None
+        # Summary is status-only: do not contact the archive DB merely to open it.
+        # Entries needs rows and partition choices; Partitions needs only metadata.
+        if selected_tab == "entries":
+            partitions = list_partitions(config)
+            rows, total_rows = fetch_archive_page(config, page, page_size, selected_partition, selected_source)
+        elif selected_tab == "partitions":
+            partitions = list_partitions(config)
     except Exception as exc:
         partitions, rows, total_rows, error = [], [], 0, str(exc)
     source_options = [*config.log_types, *(f"custom:{item['name']}" for item in config.custom_sources)]
