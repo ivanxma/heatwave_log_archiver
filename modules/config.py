@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-from .secret_provider import vault_credential
+from .secret_provider import clear_credential_cache, vault_credential
 from dataclasses import dataclass
 
 
@@ -67,7 +67,7 @@ class ArchiveConfig:
     schedule: str
 
     @classmethod
-    def from_env(cls) -> "ArchiveConfig":
+    def from_env(cls, resolve_source_secret: bool = True, resolve_archive_secret: bool = True) -> "ArchiveConfig":
         settings = _settings()
         source_host = _value("ERROR_ARCHIVER_SOURCE_HOST", "127.0.0.1", settings)
         source_user = _value("ERROR_ARCHIVER_SOURCE_USER", settings=settings)
@@ -80,8 +80,12 @@ class ArchiveConfig:
             custom_sources = [*custom_sources, {"name": "custom", "source": _value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings), "timestamp_column": _value("ERROR_ARCHIVER_CUSTOM_TIMESTAMP_COLUMN", "event_time", settings)}]
         source_secret_ocid = _value("ERROR_ARCHIVER_SOURCE_SECRET_OCID", settings=settings)
         archive_secret_ocid = _value("ERROR_ARCHIVER_ARCHIVE_SECRET_OCID", settings=settings)
-        source_user, source_password = vault_credential(source_secret_ocid, source_user)
-        archive_user, archive_password = vault_credential(archive_secret_ocid, archive_user)
+        source_password = ""
+        archive_password = ""
+        if resolve_source_secret:
+            source_user, source_password = vault_credential(source_secret_ocid, source_user)
+        if resolve_archive_secret:
+            archive_user, archive_password = vault_credential(archive_secret_ocid, archive_user)
         config = cls(
             enabled=_value("ERROR_ARCHIVER_ENABLED", "true", settings).lower() in {"1", "true", "yes", "on"},
             log_type=log_type,
@@ -127,3 +131,4 @@ def save_settings(settings: dict[str, object]) -> None:
     temp.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     temp.chmod(0o600)
     temp.replace(path)
+    clear_credential_cache()

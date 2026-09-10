@@ -132,7 +132,7 @@ def initial_setup():
             previous = _settings()
             try:
                 save_settings(settings)
-                config = ArchiveConfig.from_env()
+                config = ArchiveConfig.from_env(resolve_source_secret=False)
                 ensure_schema(config)
                 settings["configured"] = True
                 save_settings(settings)
@@ -156,7 +156,7 @@ def logout():
 def dashboard():
     if not _settings().get("configured"):
         return redirect(url_for("initial_setup"))
-    config = ArchiveConfig.from_env()
+    config = ArchiveConfig.from_env(resolve_source_secret=False)
     page = max(1, request.args.get("page", 1, type=int))
     page_size = request.args.get("page_size", 50, type=int)
     selected_partition = request.args.get("partition", "")
@@ -184,7 +184,7 @@ def dashboard():
 @app.get("/archive-export.csv")
 @login_required
 def archive_export_csv():
-    rows = recent_rows(ArchiveConfig.from_env(), 500)
+    rows = recent_rows(ArchiveConfig.from_env(resolve_source_secret=False), 500)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=("event_time", "log_type", "payload", "archived_at"))
     writer.writeheader()
@@ -198,7 +198,7 @@ def partitions_export_csv():
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=("partition_name", "boundary", "table_rows", "data_length", "create_time"))
     writer.writeheader()
-    writer.writerows(list_partitions(ArchiveConfig.from_env()))
+    writer.writerows(list_partitions(ArchiveConfig.from_env(resolve_source_secret=False)))
     return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=archive-partitions.csv"})
 
 
@@ -220,14 +220,14 @@ def configuration():
         settings.pop("archive_password", None)
         try:
             save_settings(settings)
-            ArchiveConfig.from_env()  # validates persisted values
+            ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)  # validates non-secret values
             flash("Configuration saved. The next timer tick uses these settings.", "success")
             return redirect(url_for("configuration"))
         except Exception as exc:
             save_settings(original)
             flash(f"Configuration was not accepted: {exc}", "error")
     settings = _settings()
-    return render_dashboard("configuration.html", settings=settings, config=ArchiveConfig.from_env(), custom_sources=settings.get("custom_sources", []), active_menu="configuration")
+    return render_dashboard("configuration.html", settings=settings, config=ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False), custom_sources=settings.get("custom_sources", []), active_menu="configuration")
 
 
 @app.route("/custom-sources/<int:index>", methods=["GET", "POST"])
@@ -245,7 +245,7 @@ def custom_source_form(index: int):
             candidate = {**settings, "custom_sources": sources[:index] + [item] + sources[index + 1:] if index >= 0 else [*sources, item]}
             try:
                 save_settings(candidate)
-                ArchiveConfig.from_env()
+                ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
                 flash("Custom source saved.", "success")
                 return redirect(url_for("configuration"))
             except Exception as exc:
@@ -283,7 +283,7 @@ def archive_setup():
             settings.pop("archive_password", None)
             try:
                 save_settings(settings)
-                config = ArchiveConfig.from_env()
+                config = ArchiveConfig.from_env(resolve_source_secret=False)
                 ensure_schema(config)
                 settings["configured"] = True
                 save_settings(settings)
@@ -292,7 +292,7 @@ def archive_setup():
             except Exception as exc:
                 save_settings(original)
                 flash(f"Archive destination setup failed: {exc}", "error")
-    return render_dashboard("archive_setup.html", settings=_settings(), config=ArchiveConfig.from_env(), active_menu="archive_setup")
+    return render_dashboard("archive_setup.html", settings=_settings(), config=ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False), active_menu="archive_setup")
 
 
 @app.post("/run-now")
@@ -313,7 +313,7 @@ def run_now():
 @profile_manager_required
 def partitions_ensure():
     try:
-        ensure_schema(ArchiveConfig.from_env())
+        ensure_schema(ArchiveConfig.from_env(resolve_source_secret=False))
         flash("Archive schema and future partitions are ready.", "success")
     except Exception as exc:
         flash(f"Partition maintenance failed: {exc}", "error")
@@ -325,7 +325,7 @@ def partitions_ensure():
 def partitions_prepare():
     try:
         months = max(1, min(int(request.form.get("months_ahead", "2")), 24))
-        added = ensure_future_partitions(ArchiveConfig.from_env(), months)
+        added = ensure_future_partitions(ArchiveConfig.from_env(resolve_source_secret=False), months)
         flash(f"Future partition preparation completed; {len(added)} partition(s) added.", "success")
     except Exception as exc:
         flash(f"Future partition preparation failed: {exc}", "error")
@@ -336,7 +336,7 @@ def partitions_prepare():
 @profile_manager_required
 def partition_truncate(partition_name: str):
     try:
-        truncate_partition(ArchiveConfig.from_env(), partition_name)
+        truncate_partition(ArchiveConfig.from_env(resolve_source_secret=False), partition_name)
         flash(f"Partition {partition_name} was emptied.", "success")
     except Exception as exc:
         flash(f"Could not empty partition: {exc}", "error")
@@ -347,7 +347,7 @@ def partition_truncate(partition_name: str):
 @profile_manager_required
 def partition_drop(partition_name: str):
     try:
-        drop_partition(ArchiveConfig.from_env(), partition_name)
+        drop_partition(ArchiveConfig.from_env(resolve_source_secret=False), partition_name)
         flash(f"Partition {partition_name} was deleted.", "success")
     except Exception as exc:
         flash(f"Could not delete partition: {exc}", "error")
@@ -367,7 +367,7 @@ def partitions_bulk():
         if not operation:
             raise ValueError("Select a valid partition action.")
         for name in names:
-            operation(ArchiveConfig.from_env(), name)
+            operation(ArchiveConfig.from_env(resolve_source_secret=False), name)
         flash(f"{len(names)} partition(s) {('emptied' if action == 'empty' else 'deleted')}.", "success")
     except Exception as exc:
         flash(f"Partition action failed: {exc}", "error")
@@ -382,7 +382,7 @@ def partitions_download():
         flash("Select at least one monthly partition to download.", "error")
         return redirect(url_for("dashboard"))
     try:
-        payload = selected_partitions_zip(ArchiveConfig.from_env(), names)
+        payload = selected_partitions_zip(ArchiveConfig.from_env(resolve_source_secret=False), names)
         return Response(payload, mimetype="application/zip", headers={"Content-Disposition": "attachment; filename=selected-archive-partitions.zip"})
     except Exception as exc:
         flash(f"Partition download failed: {exc}", "error")
