@@ -296,7 +296,7 @@ def configuration_entity(kind: str, index: int):
     if kind not in _ENTITY_FIELDS:
         return redirect(url_for("configuration"))
     key, fields = _ENTITY_FIELDS[kind]
-    settings = _settings(); items = list(settings.get(key, [])); item = items[index] if 0 <= index < len(items) else {}
+    settings = _settings(); original = settings.copy(); items = list(settings.get(key, [])); item = items[index] if 0 <= index < len(items) else {}
     if request.method == "POST":
         candidate = {field: request.form.get(field, "").strip() for field in fields}
         if kind == "mappings":
@@ -307,7 +307,8 @@ def configuration_entity(kind: str, index: int):
             save_settings(settings); ArchiveConfig.from_env(False, False)
             flash("Configuration record saved.", "success"); return redirect(url_for("configuration"))
         except Exception as exc:
-            flash(str(exc), "error"); settings = _settings()
+            save_settings(original)
+            flash(str(exc), "error"); settings = original
     return render_dashboard("entity_form.html", kind=kind, item=item, index=index, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), active_menu="configuration")
 
 
@@ -315,9 +316,32 @@ def configuration_entity(kind: str, index: int):
 @profile_manager_required
 def configuration_entity_delete(kind: str, index: int):
     if kind in _ENTITY_FIELDS:
-        key, _ = _ENTITY_FIELDS[kind]; settings = _settings(); items = list(settings.get(key, []))
+        key, _ = _ENTITY_FIELDS[kind]; settings = _settings(); original = settings.copy(); items = list(settings.get(key, []))
         if 0 <= index < len(items):
-            del items[index]; settings[key] = items; save_settings(settings); flash("Configuration record deleted.", "success")
+            del items[index]; settings[key] = items
+            try:
+                save_settings(settings); ArchiveConfig.from_env(False, False)
+                flash("Configuration record deleted.", "success")
+            except Exception as exc:
+                save_settings(original); flash(f"Deletion was not accepted: {exc}", "error")
+    return redirect(url_for("configuration"))
+
+
+@app.post("/configuration/<kind>/bulk-delete")
+@profile_manager_required
+def configuration_entity_bulk_delete(kind: str):
+    if kind in _ENTITY_FIELDS:
+        key, _ = _ENTITY_FIELDS[kind]; settings = _settings(); original = settings.copy(); items = list(settings.get(key, []))
+        selected = {int(value) for value in request.form.getlist("selected") if value.isdigit()}
+        if selected:
+            settings[key] = [item for index, item in enumerate(items) if index not in selected]
+            try:
+                save_settings(settings); ArchiveConfig.from_env(False, False)
+                flash(f"{len(selected)} record(s) deleted.", "success")
+            except Exception as exc:
+                save_settings(original); flash(f"Deletion was not accepted: {exc}", "error")
+        else:
+            flash("Select at least one record.", "error")
     return redirect(url_for("configuration"))
 
 
