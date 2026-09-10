@@ -16,11 +16,20 @@ Create each Vault secret as either a plain password or JSON:
 
 Grant the VM dynamic group permission to read the Secret OCIDs, then use **Job configuration** to enter source/archive Vault Secret OCIDs and enable the job. See the [detailed log-archiving architecture](docs/log-archiving-detailed-architecture.md) for deployment, security, idempotency, and lifecycle details.
 
-## Install on Oracle Linux 9
+## Install on a new Oracle Linux 9 VM
 
-Copy the repository to `/opt/error-log-archiver` and run `sudo ./setup.sh`.
+Before connecting, allow TCP 22 from your administration IP in the OCI NSG/security list. Clone and install:
 
-The console listens only on HTTPS port 443. Setup generates a self-signed certificate under `/etc/error-log-archiver/tls/`; replace it with a trusted certificate for production use.
+```bash
+sudo dnf install -y git
+sudo git clone https://github.com/ivanxma/heatwave_log_archiver /opt/error-log-archiver
+cd /opt/error-log-archiver
+sudo ./setup.sh
+```
+
+The console listens only on HTTPS port 443. Setup opens the host firewalld HTTPS service when available, but OCI ingress is separate: allow TCP 443 in the VM's NSG/security list. Setup generates a self-signed certificate under `/etc/error-log-archiver/tls/`; replace it with a trusted certificate for production use.
+
+After installation, browse to `https://<public-ip>/`, create/select a non-secret connection profile, set OCI Vault Secret OCIDs, configure the archive destination, then enable the job.
 
 ## Operations
 
