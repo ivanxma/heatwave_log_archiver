@@ -1,0 +1,18 @@
+[Unit]
+Description=Archive MySQL performance_schema.error_log
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=errorlogarchiver
+Group=errorlogarchiver
+WorkingDirectory=/opt/error-log-archiver
+EnvironmentFile=-/etc/error-log-archiver/runtime.env
+Environment=ERROR_ARCHIVER_CONFIG_FILE=/var/lib/error-log-archiver/settings.json
+ExecStart=/opt/error-log-archiver/.venv/bin/python /opt/error-log-archiver/archive_worker.py
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/error-log-archiver

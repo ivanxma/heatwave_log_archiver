@@ -1,0 +1,387 @@
+"""Web console for MySQL performance_schema.error_log archival."""
+from __future__ import annotations
+
+import os
+import secrets
+import csv
+import io
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from functools import wraps
+
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
+
+from modules.archive_service import drop_partition, ensure_future_partitions, ensure_schema, fetch_archive_page, list_partitions, recent_rows, run_archive_cycle, selected_partitions_zip, truncate_partition
+from modules.config import ArchiveConfig, _settings, save_settings
+from modules.job_state import load_state, record as record_job_state
+from modules.mysql_util import test_mysql_connection
+from modules.profile_store import ensure_profile_store, get_profile_by_name, load_profiles, save_profile_from_form
+from modules.session_store import ServerSessionStore
+
+app = Flask(__name__)
+app.config.update(SECRET_KEY=os.environ.get("ERROR_ARCHIVER_WEB_SECRET", secrets.token_urlsafe(32)), SESSION_COOKIE_NAME="error_archiver_session", SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+PROFILE_STORE_PATH = Path(os.environ.get("ERROR_ARCHIVER_PROFILE_STORE", "profiles.json"))
+SERVER_SESSIONS = ServerSessionStore(int(os.environ.get("ERROR_ARCHIVER_SESSION_TTL", "3600")))
+ensure_profile_store(PROFILE_STORE_PATH)
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        record = SERVER_SESSIONS.get(session.get("connection_id"))
+        if session.get("session_scope") != "error-log-archiver" or not record:
+            session.clear()
+            return redirect(url_for("login"))
+        try:
+            test_mysql_connection(record["profile"], str(record["username"]), str(record["password"]))
+        except Exception:
+            SERVER_SESSIONS.delete(session.get("connection_id"))
+            session.clear()
+            flash("The selected MySQL profile is no longer reachable. Please sign in again.", "error")
+            return redirect(url_for("login"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if SERVER_SESSIONS.get(session.get("connection_id")):
+        return redirect(url_for("dashboard"))
+    if request.method == "POST":
+        profile_name = request.form.get("profile_name", "").strip()
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        profile = get_profile_by_name(load_profiles(PROFILE_STORE_PATH), profile_name)
+        if not profile or not username or not password:
+            flash("Select a profile and enter MySQL credentials.", "error")
+        else:
+            try:
+                test_mysql_connection(profile, username, password)
+                session.clear()
+                session["session_scope"] = "error-log-archiver"
+                session["connection_id"] = SERVER_SESSIONS.create(profile_name, username, password, profile)
+                return redirect(url_for("initial_setup") if not _settings().get("configured") else url_for("dashboard"))
+            except Exception as exc:
+                flash(f"Could not authenticate with the selected MySQL profile: {exc}", "error")
+    return render_template("login.html", profiles=load_profiles(PROFILE_STORE_PATH), selected_profile=request.args.get("profile", ""))
+
+
+@app.route("/profiles/new", methods=["GET", "POST"])
+def create_profile():
+    if request.method == "POST":
+        try:
+            name = save_profile_from_form(PROFILE_STORE_PATH, request.form)
+            flash("Profile saved. Sign in using it.", "success")
+            return redirect(url_for("login", profile=name))
+        except Exception as exc:
+            flash(str(exc), "error")
+    return render_template("profile_form.html")
+
+
+def profile_manager_required(view):
+    @wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        record = SERVER_SESSIONS.get(session.get("connection_id"))
+        if not record or not bool(record["profile"].get("profile_management")):
+            flash("The selected profile is not authorized to manage profiles.", "error")
+            return redirect(url_for("dashboard"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+@app.route("/initial-setup", methods=["GET", "POST"])
+@profile_manager_required
+def initial_setup():
+    """First-login confirmation before service credentials and archive destination are saved."""
+    record = SERVER_SESSIONS.get(session.get("connection_id"))
+    profile = record["profile"]
+    if request.method == "POST":
+        if request.form.get("confirm_setup") != "yes":
+            flash("Confirm archive setup before continuing.", "error")
+        else:
+            settings = _settings()
+            archive_db = request.form.get("archive_db", "").strip()
+            archive_table = request.form.get("archive_table", "").strip()
+            settings.update({
+                "enabled": True,
+                "source_host": str(profile.get("host", "127.0.0.1")), "source_port": str(profile.get("port", 3306)),
+                "source_socket": str(profile.get("socket", "")), "source_user": str(record["username"]), "source_secret_ocid": request.form.get("source_secret_ocid", "").strip(),
+                "archive_host": request.form.get("archive_host", str(profile.get("host", "127.0.0.1"))).strip(),
+                "archive_port": request.form.get("archive_port", str(profile.get("port", 3306))).strip(),
+                "archive_socket": request.form.get("archive_socket", str(profile.get("socket", ""))).strip(),
+                "archive_user": request.form.get("archive_user", str(record["username"])).strip(), "archive_secret_ocid": request.form.get("archive_secret_ocid", "").strip(),
+                "archive_db": archive_db, "archive_table": archive_table, "log_type": request.form.get("log_type", "error_log").strip(),
+                "schedule": request.form.get("schedule", "5min").strip(),
+                "retention_months": request.form.get("retention_months", "12").strip(),
+                "batch_size": request.form.get("batch_size", "5000").strip(),
+            })
+            settings.pop("source_password", None)
+            settings.pop("archive_password", None)
+            previous = _settings()
+            try:
+                save_settings(settings)
+                config = ArchiveConfig.from_env()
+                ensure_schema(config)
+                settings["configured"] = True
+                save_settings(settings)
+                flash(f"Archive database {config.archive_db} and table {config.archive_table} are configured.", "success")
+                return redirect(url_for("dashboard"))
+            except Exception as exc:
+                save_settings(previous)
+                flash(f"Setup did not complete: {exc}", "error")
+    return render_dashboard("initial_setup.html", profile=profile, record=record, active_menu="setup")
+
+
+@app.route("/logout")
+def logout():
+    SERVER_SESSIONS.delete(session.get("connection_id"))
+    session.clear()
+    return redirect(url_for("login"))
+
+
+@app.route("/")
+@login_required
+def dashboard():
+    if not _settings().get("configured"):
+        return redirect(url_for("initial_setup"))
+    config = ArchiveConfig.from_env()
+    page = max(1, request.args.get("page", 1, type=int))
+    page_size = request.args.get("page_size", 50, type=int)
+    selected_partition = request.args.get("partition", "")
+    selected_source = request.args.get("source", "")
+    try:
+        partitions = list_partitions(config)
+        rows, total_rows = fetch_archive_page(config, page, page_size, selected_partition, selected_source)
+        error = None
+    except Exception as exc:
+        partitions, rows, total_rows, error = [], [], 0, str(exc)
+    source_options = [*config.log_types, *(f"custom:{item['name']}" for item in config.custom_sources)]
+    job_state = load_state()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    activity = []
+    for event in reversed(job_state.get("history", [])):
+        try:
+            when = datetime.fromisoformat(event["time"])
+            if when >= cutoff:
+                activity.append({"time": when.strftime("%H:%M"), "count": int(event.get("copied", 0) or 0), "status": event.get("status", "")})
+        except (KeyError, ValueError, TypeError):
+            continue
+    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, source_options=source_options, error=error, job_state=job_state, activity=activity, active_menu="archive")
+
+
+@app.get("/archive-export.csv")
+@login_required
+def archive_export_csv():
+    rows = recent_rows(ArchiveConfig.from_env(), 500)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=("event_time", "log_type", "payload", "archived_at"))
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=archived-log-entries.csv"})
+
+
+@app.get("/partitions-export.csv")
+@login_required
+def partitions_export_csv():
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=("partition_name", "boundary", "table_rows", "data_length", "create_time"))
+    writer.writeheader()
+    writer.writerows(list_partitions(ArchiveConfig.from_env()))
+    return Response(output.getvalue(), mimetype="text/csv", headers={"Content-Disposition": "attachment; filename=archive-partitions.csv"})
+
+
+@app.route("/configuration", methods=["GET", "POST"])
+@profile_manager_required
+def configuration():
+    fields = ("source_secret_ocid", "archive_secret_ocid", "source_host", "source_port", "source_user", "source_socket", "archive_host", "archive_port", "archive_user", "archive_socket", "archive_db", "archive_table", "retention_months", "batch_size", "schedule")
+    if request.method == "POST":
+        original = _settings()
+        settings = original.copy()
+        settings["enabled"] = request.form.get("enabled") == "on"
+        settings["log_types"] = ",".join(request.form.getlist("log_types"))
+        for field in fields:
+            submitted = request.form.get(field, "").strip()
+            settings[field] = submitted
+        settings.pop("source_password", None)
+        settings.pop("archive_password", None)
+        try:
+            save_settings(settings)
+            ArchiveConfig.from_env()  # validates persisted values
+            flash("Configuration saved. The next timer tick uses these settings.", "success")
+            return redirect(url_for("configuration"))
+        except Exception as exc:
+            save_settings(original)
+            flash(f"Configuration was not accepted: {exc}", "error")
+    settings = _settings()
+    return render_dashboard("configuration.html", settings=settings, config=ArchiveConfig.from_env(), custom_sources=settings.get("custom_sources", []), active_menu="configuration")
+
+
+@app.route("/custom-sources/<int:index>", methods=["GET", "POST"])
+@app.route("/custom-sources/new", defaults={"index": -1}, methods=["GET", "POST"])
+@profile_manager_required
+def custom_source_form(index: int):
+    settings = _settings()
+    sources = list(settings.get("custom_sources", []))
+    current = sources[index] if 0 <= index < len(sources) else {"name": "", "source": "", "timestamp_column": "event_time"}
+    if request.method == "POST":
+        item = {"name": request.form.get("name", "").strip(), "source": request.form.get("source", "").strip(), "timestamp_column": request.form.get("timestamp_column", "").strip()}
+        if not item["name"]:
+            flash("Custom source name is required.", "error")
+        else:
+            candidate = {**settings, "custom_sources": sources[:index] + [item] + sources[index + 1:] if index >= 0 else [*sources, item]}
+            try:
+                save_settings(candidate)
+                ArchiveConfig.from_env()
+                flash("Custom source saved.", "success")
+                return redirect(url_for("configuration"))
+            except Exception as exc:
+                save_settings(settings)
+                flash(str(exc), "error")
+    return render_dashboard("custom_source_form.html", source=current, index=index, active_menu="configuration")
+
+
+@app.post("/custom-sources/<int:index>/delete")
+@profile_manager_required
+def custom_source_delete(index: int):
+    settings = _settings()
+    sources = list(settings.get("custom_sources", []))
+    if 0 <= index < len(sources):
+        del sources[index]
+        settings["custom_sources"] = sources
+        save_settings(settings)
+        flash("Custom source deleted.", "success")
+    return redirect(url_for("configuration"))
+
+
+@app.route("/archive-setup", methods=["GET", "POST"])
+@profile_manager_required
+def archive_setup():
+    """Dedicated archive-destination setup, including a remote MySQL archive host."""
+    if request.method == "POST":
+        if request.form.get("confirm_setup") != "yes":
+            flash("Confirm archive schema setup before continuing.", "error")
+        else:
+            original = _settings()
+            settings = original.copy()
+            for field in ("archive_host", "archive_port", "archive_user", "archive_socket", "archive_db", "archive_table"):
+                settings[field] = request.form.get(field, "").strip()
+            settings["archive_secret_ocid"] = request.form.get("archive_secret_ocid", "").strip()
+            settings.pop("archive_password", None)
+            try:
+                save_settings(settings)
+                config = ArchiveConfig.from_env()
+                ensure_schema(config)
+                settings["configured"] = True
+                save_settings(settings)
+                flash(f"Archive destination {config.archive_host}: {config.archive_db}.{config.archive_table} is ready.", "success")
+                return redirect(url_for("dashboard"))
+            except Exception as exc:
+                save_settings(original)
+                flash(f"Archive destination setup failed: {exc}", "error")
+    return render_dashboard("archive_setup.html", settings=_settings(), config=ArchiveConfig.from_env(), active_menu="archive_setup")
+
+
+@app.post("/run-now")
+@profile_manager_required
+def run_now():
+    try:
+        config = ArchiveConfig.from_env()
+        result = run_archive_cycle(config)
+        record_job_state("Succeeded", **result, schedule=config.schedule, log_type=config.log_type, trigger="Web: run now")
+        flash(f"Archive cycle completed: {result['copied']} row(s) copied; {len(result['partitions_dropped'])} partition(s) dropped.", "success")
+    except Exception as exc:
+        record_job_state("Failed", error=str(exc), trigger="Web: run now")
+        flash(f"Archive cycle failed: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/partitions/ensure")
+@profile_manager_required
+def partitions_ensure():
+    try:
+        ensure_schema(ArchiveConfig.from_env())
+        flash("Archive schema and future partitions are ready.", "success")
+    except Exception as exc:
+        flash(f"Partition maintenance failed: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/partitions/prepare")
+@profile_manager_required
+def partitions_prepare():
+    try:
+        months = max(1, min(int(request.form.get("months_ahead", "2")), 24))
+        added = ensure_future_partitions(ArchiveConfig.from_env(), months)
+        flash(f"Future partition preparation completed; {len(added)} partition(s) added.", "success")
+    except Exception as exc:
+        flash(f"Future partition preparation failed: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/partitions/<partition_name>/truncate")
+@profile_manager_required
+def partition_truncate(partition_name: str):
+    try:
+        truncate_partition(ArchiveConfig.from_env(), partition_name)
+        flash(f"Partition {partition_name} was emptied.", "success")
+    except Exception as exc:
+        flash(f"Could not empty partition: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/partitions/<partition_name>/drop")
+@profile_manager_required
+def partition_drop(partition_name: str):
+    try:
+        drop_partition(ArchiveConfig.from_env(), partition_name)
+        flash(f"Partition {partition_name} was deleted.", "success")
+    except Exception as exc:
+        flash(f"Could not delete partition: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/partitions/bulk")
+@profile_manager_required
+def partitions_bulk():
+    action = request.form.get("action")
+    names = request.form.getlist("partitions")
+    if not names:
+        flash("Select at least one monthly partition.", "error")
+        return redirect(url_for("dashboard"))
+    try:
+        operation = truncate_partition if action == "empty" else drop_partition if action == "delete" else None
+        if not operation:
+            raise ValueError("Select a valid partition action.")
+        for name in names:
+            operation(ArchiveConfig.from_env(), name)
+        flash(f"{len(names)} partition(s) {('emptied' if action == 'empty' else 'deleted')}.", "success")
+    except Exception as exc:
+        flash(f"Partition action failed: {exc}", "error")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/partitions/download")
+@profile_manager_required
+def partitions_download():
+    names = request.form.getlist("partitions")
+    if not names:
+        flash("Select at least one monthly partition to download.", "error")
+        return redirect(url_for("dashboard"))
+    try:
+        payload = selected_partitions_zip(ArchiveConfig.from_env(), names)
+        return Response(payload, mimetype="application/zip", headers={"Content-Disposition": "attachment; filename=selected-archive-partitions.zip"})
+    except Exception as exc:
+        flash(f"Partition download failed: {exc}", "error")
+        return redirect(url_for("dashboard"))
+
+
+def render_dashboard(page_template: str, **context):
+    record = SERVER_SESSIONS.get(session.get("connection_id"))
+    shared = {**SERVER_SESSIONS.public_context(record), "can_manage_profiles": bool(record and record["profile"].get("profile_management")), "active_menu": "archive"}
+    shared.update(context)
+    return render_template(page_template, **shared)
+
+
+if __name__ == "__main__":
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8080")), threaded=True)

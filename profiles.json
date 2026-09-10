@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "local-mysql": {
+      "name": "local-mysql",
+      "mode": "tcp",
+      "host": "127.0.0.1",
+      "port": 3306,
+      "socket": "",
+      "profile_management": true
+    }
+  }
+}

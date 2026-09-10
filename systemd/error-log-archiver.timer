@@ -1,0 +1,11 @@
+[Unit]
+Description=Evaluate error-log archive schedule every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+Persistent=true
+Unit=error-log-archiver.service
+
+[Install]
+WantedBy=timers.target

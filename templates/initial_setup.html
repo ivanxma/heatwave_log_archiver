@@ -1,0 +1,21 @@
+{% extends 'base.html' %}{% block content %}
+<section class="page-heading"><div><p class="eyebrow">First-login setup</p><h1>Confirm archive destination</h1><p>Your selected profile is <strong>{{ current_profile_name }}</strong>. The source job connection will use this profile and your server-held MySQL credential.</p></div></section>
+<form method="post" class="config setup-form" autocomplete="off">
+  <fieldset><legend>Archive destination</legend>
+    <label>Archive host *<input name="archive_host" value="{{ profile.host or '127.0.0.1' }}" required></label>
+    <label>Archive port *<input name="archive_port" type="number" min="1" max="65535" value="{{ profile.port or 3306 }}" required></label>
+    <label>Archive socket (optional)<input name="archive_socket" value="{{ profile.socket or '' }}"></label>
+    <label>Archive user *<input name="archive_user" value="{{ current_username }}" required></label>
+    <label>Archive password <input name="archive_password" type="password" placeholder="Uses login password when blank" autocomplete="new-password"></label>
+    <label>Archive database *<input name="archive_db" value="archivedb" required></label>
+    <label>Archive table *<input name="archive_table" value="performance_schema_error_log_archive" required></label>
+  </fieldset>
+  <fieldset><legend>Job policy</legend>
+    <label>Run every *<input name="schedule" value="5min" required></label>
+    <label>Retention months *<input name="retention_months" type="number" min="1" value="12" required></label>
+    <label>Rows per cycle *<input name="batch_size" type="number" min="1" value="5000" required></label>
+  </fieldset>
+  <label class="checkbox-field"><input type="checkbox" name="confirm_setup" value="yes" required> I confirm that this service may create the archive database/table and monthly partitions.</label>
+  <div class="form-actions"><button>Confirm and create archive</button></div>
+</form>
+{% endblock %}

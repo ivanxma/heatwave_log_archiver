@@ -1,0 +1,5 @@
+[project]
+name = "error-log-archiver"
+version = "1.0.0"
+requires-python = ">=3.12"
+dependencies = ["Flask>=3.1,<4.0", "mysql-connector-python>=9.5,<10.0", "gunicorn>=23.0,<24.0"]
