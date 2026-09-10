@@ -12,7 +12,7 @@ from functools import wraps
 from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
 from modules.archive_service import drop_partition, ensure_future_partitions, ensure_schema, fetch_archive_page, list_partitions, recent_rows, run_archive_cycle, selected_partitions_zip, truncate_partition
-from modules.config import ArchiveConfig, _settings, save_settings
+from modules.config import ArchiveConfig, _settings, save_settings, source_type_for
 from modules.job_state import load_state, record as record_job_state
 from modules.mysql_util import test_mysql_connection
 from modules.profile_store import ensure_profile_store, get_profile_by_name, load_profiles, save_profile_from_form
@@ -201,7 +201,11 @@ def dashboard():
             partitions = list_partitions(_archive_view_config(selected_archive_table))
     except Exception as exc:
         partitions, rows, total_rows, error = [], [], 0, str(exc)
-    source_options = [*config.log_types, *(f"custom:{item['name']}" for item in config.custom_sources)]
+    source_options = [*config.log_types, *(item["name"] for item in config.custom_sources)]
+    for mapping in config.source_mappings:
+        source_table = next((item for item in config.source_tables if item.get("name") == mapping.get("source_table")), {})
+        source_options.append(source_type_for(source_table) if source_table else mapping.get("name", ""))
+    source_options = list(dict.fromkeys(option for option in source_options if option))
     job_state = load_state()
     execution_page = max(1, request.args.get("execution_page", 1, type=int))
     execution_page_size = request.args.get("execution_page_size", 25, type=int)

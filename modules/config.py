@@ -10,6 +10,25 @@ from .secret_provider import clear_credential_cache, vault_credential
 from dataclasses import dataclass, replace
 
 
+SOURCE_TYPE_PRESETS = {
+    "error_log": ("performance_schema.error_log", "LOGGED"),
+    "general_log": ("mysql.general_log", "event_time"),
+    "slow_log": ("mysql.slow_log", "start_time"),
+}
+
+
+def source_type_for(source: dict[str, str]) -> str:
+    """Return a declared or inferred built-in type; otherwise custom."""
+    declared = source.get("source_type", "")
+    if declared in SOURCE_TYPE_PRESETS:
+        return declared
+    return next(
+        (kind for kind, preset in SOURCE_TYPE_PRESETS.items()
+         if (source.get("source"), source.get("timestamp_column")) == preset),
+        "custom",
+    )
+
+
 def config_file() -> Path:
     return Path(os.environ.get("ERROR_ARCHIVER_CONFIG_FILE", "instance/settings.json"))
 
@@ -162,11 +181,17 @@ class ArchiveConfig:
         archive_user = archive_record.get("user") or mapping.get("archive_user") or self.archive_user
         source_secret = source_record.get("secret_ocid") or mapping.get("source_secret_ocid") or self.source_secret_ocid
         archive_secret = archive_record.get("secret_ocid") or mapping.get("archive_secret_ocid") or self.archive_secret_ocid
+        source_type = source_type_for(source_table)
+        # Keep the old custom mapping key as cursor/fingerprint identity.  This
+        # makes the source-type migration idempotent and avoids re-archiving
+        # data that was stored before standard source labels were introduced.
+        cursor_key = f"custom:{mapping['name']}"
+        archive_log_type = source_type if source_type != "custom" else mapping["name"]
         source_user, source_password = vault_credential(source_secret, source_user)
         archive_user, archive_password = vault_credential(archive_secret, archive_user)
         return replace(
             self,
-            log_types=(), custom_sources=({"name": mapping["name"], "source": source_table.get("source") or mapping["source"], "timestamp_column": source_table.get("timestamp_column") or mapping["timestamp_column"]},),
+            log_types=(), custom_sources=({"name": mapping["name"], "source": source_table.get("source") or mapping["source"], "timestamp_column": source_table.get("timestamp_column") or mapping["timestamp_column"], "cursor_key": cursor_key, "log_type": archive_log_type},),
             source_host=source_record.get("host") or mapping.get("source_host") or self.source_host, source_port=int(source_record.get("port") or mapping.get("source_port") or self.source_port), source_user=source_user, source_password=source_password, source_secret_ocid=source_secret, source_socket=source_record.get("socket") or mapping.get("source_socket") or self.source_socket,
             archive_host=archive_record.get("host") or mapping.get("archive_host") or self.archive_host, archive_port=int(archive_record.get("port") or mapping.get("archive_port") or self.archive_port), archive_user=archive_user, archive_password=archive_password, archive_secret_ocid=archive_secret, archive_socket=archive_record.get("socket") or mapping.get("archive_socket") or self.archive_socket,
             archive_db=archive_table.get("archive_db") or mapping.get("archive_db") or self.archive_db, archive_table=archive_table.get("archive_table") or mapping.get("archive_table") or self.archive_table,

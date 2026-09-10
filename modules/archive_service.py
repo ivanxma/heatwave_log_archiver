@@ -92,15 +92,21 @@ def archive_error_log(config: ArchiveConfig) -> int:
         write = archive.cursor()
         retention_floor = _month_start(_add_months(datetime.now(timezone.utc).date(), -config.retention_months))
         sources = {"error_log": ("performance_schema.error_log", "LOGGED"), "slow_log": ("mysql.slow_log", "start_time"), "general_log": ("mysql.general_log", "event_time")}
-        selected = [(kind, *sources[kind]) for kind in config.log_types]
+        selected = [(kind, kind, *sources[kind]) for kind in config.log_types]
         for source in config.custom_sources:
             schema, table = source["source"].split(".")
-            selected.append((f"custom:{source['name']}", f"{ident(schema)}.{ident(table)}", source["timestamp_column"]))
+            cursor_key = source.get("cursor_key") or f"custom:{source['name']}"
+            selected.append((cursor_key, source.get("log_type") or source["name"], f"{ident(schema)}.{ident(table)}", source["timestamp_column"]))
         sql = f"""INSERT IGNORE INTO {_table(config)}
             (event_time, log_type, payload, source_fingerprint)
             VALUES (%s, %s, %s, UNHEX(SHA2(%s, 256)))"""
-        for kind, table_name, timestamp_column in selected:
-            checkpoint = cursors.get(kind)
+        for cursor_key, log_type, table_name, timestamp_column in selected:
+            # Mapping-based error/general/slow log sources were historically
+            # saved as custom:<mapping>. Rename those existing labels in place;
+            # their fingerprint and cursor remain unchanged, so no rows repeat.
+            if log_type != cursor_key:
+                write.execute(f"UPDATE {_table(config)} SET log_type = %s WHERE log_type = %s", (log_type, cursor_key))
+            checkpoint = cursors.get(cursor_key)
             final_cursor = checkpoint
             while True:
                 floor = checkpoint or retention_floor
@@ -112,14 +118,14 @@ def archive_error_log(config: ArchiveConfig) -> int:
                 for row in rows:
                     event_time = row.pop(timestamp_column.upper(), row.pop(timestamp_column, None))
                     payload = json.dumps(row, default=str, sort_keys=True)
-                    write.execute(sql, (event_time, kind, payload, f"{kind}|{event_time}|{payload}"))
+                    write.execute(sql, (event_time, log_type, payload, f"{cursor_key}|{event_time}|{payload}"))
                     copied += write.rowcount
                     final_cursor = event_time
                 checkpoint = final_cursor
                 if len(rows) < config.batch_size:
                     break
             if final_cursor:
-                final_cursors[kind] = str(final_cursor)
+                final_cursors[cursor_key] = str(final_cursor)
         archive.commit()
     return copied, final_cursors
 
