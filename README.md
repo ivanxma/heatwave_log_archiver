@@ -27,6 +27,8 @@ cd /opt/error-log-archiver
 sudo ./setup.sh
 ```
 
+For updates, keep the checkout root-owned and run `cd /opt/error-log-archiver && sudo git pull --ff-only && sudo ./setup.sh`.
+
 The console listens only on HTTPS port 443. Setup opens the host firewalld HTTPS service when available, but OCI ingress is separate: allow TCP 443 in the VM's NSG/security list. Setup generates a self-signed certificate under `/etc/error-log-archiver/tls/`; replace it with a trusted certificate for production use.
 
 After installation, browse to `https://<public-ip>/`, create/select a non-secret connection profile, set OCI Vault Secret OCIDs, configure the archive destination, then enable the job.

@@ -22,11 +22,16 @@ if [[ ! -f "$RUNTIME_DIR/tls/server.key" || ! -f "$RUNTIME_DIR/tls/server.crt" ]
   chmod 0640 "$RUNTIME_DIR/tls/server.key"
   chmod 0644 "$RUNTIME_DIR/tls/server.crt"
 fi
-chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 PYTHON_BIN="$(command -v python3.12 || command -v python3)"
+install -d -o "$APP_USER" -g "$APP_GROUP" -m 0755 "$APP_DIR/.venv"
+chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/.venv"
 runuser -u "$APP_USER" -- "$PYTHON_BIN" -m venv "$APP_DIR/.venv"
 runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/pip" install --upgrade pip
 runuser -u "$APP_USER" -- "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+# Keep the checked-out Git worktree root-owned for safe `sudo git pull` reruns.
+# The service needs write access only to .venv and /var/lib/error-log-archiver.
+find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name .venv -exec chown -R root:root {} +
+chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/.venv"
 install -m 0644 "$APP_DIR/systemd/error-log-archiver.service" /etc/systemd/system/error-log-archiver.service
 install -m 0644 "$APP_DIR/systemd/error-log-archiver.timer" /etc/systemd/system/error-log-archiver.timer
 install -m 0644 "$APP_DIR/systemd/error-log-archiver-web.service" /etc/systemd/system/error-log-archiver-web.service
