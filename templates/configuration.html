@@ -5,6 +5,10 @@
   <p>Define reusable connections and tables, then map each source table to exactly one archive table.</p>
 </section>
 
+<section>
+  <form method="post" class="table-toolbar"><input type="hidden" name="configuration_section" value="policy"><div class="table-controls"><label class="checkbox-field"><input type="checkbox" name="enabled" {{ 'checked' if settings.get('enabled', True) else '' }}><span>Enable scheduled archive service</span></label><label>Run every <input name="schedule" value="{{ settings.get('schedule', '5min') }}" required></label><label>Retention months <input name="retention_months" type="number" min="1" value="{{ settings.get('retention_months', '12') }}" required></label><label>Batch size <input name="batch_size" type="number" min="1" value="{{ settings.get('batch_size', '5000') }}" required></label><label>Worker threads <input name="worker_threads" type="number" min="1" value="{{ settings.get('worker_threads', '4') }}" required></label></div><button type="submit">Save job policy</button></form>
+</section>
+
 {% macro toolbar(kind, table_id, title) -%}
 <div class="table-toolbar">
   <div class="action-group">

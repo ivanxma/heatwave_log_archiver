@@ -5,6 +5,7 @@ import os
 import secrets
 import csv
 import io
+import hmac
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from functools import wraps
@@ -17,6 +18,7 @@ from modules.job_state import load_state, record as record_job_state
 from modules.mysql_util import test_mysql_connection
 from modules.profile_store import ensure_profile_store, get_profile_by_name, load_profiles, save_profile_from_form
 from modules.session_store import ServerSessionStore
+from modules.execution_lock import archive_execution_lock
 
 app = Flask(__name__)
 app.config.update(
@@ -26,6 +28,21 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE="Strict",
 )
+
+
+@app.context_processor
+def csrf_context():
+    return {"csrf_token": session.setdefault("csrf_token", secrets.token_urlsafe(32))}
+
+
+@app.before_request
+def verify_csrf():
+    if request.method == "POST":
+        expected = session.get("csrf_token", "")
+        provided = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
+        if not expected or not hmac.compare_digest(expected, provided):
+            from flask import abort
+            abort(400, "Invalid form token.")
 
 
 @app.after_request
@@ -448,7 +465,11 @@ def run_now():
         config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
         if not config.source_mappings:
             config = ArchiveConfig.from_env()
-        result = run_archive_cycle(config)
+        with archive_execution_lock(config_file().parent) as acquired:
+            if not acquired:
+                flash("An archive execution is already in progress.", "error")
+                return redirect(url_for("dashboard"))
+            result = run_archive_cycle(config)
         record_job_state("Succeeded", **result, schedule=config.schedule, log_type=config.log_type, trigger="Web: run now")
         flash(f"Archive cycle completed: {result['copied']} row(s) copied; {len(result['partitions_dropped'])} partition(s) dropped.", "success")
     except Exception as exc:

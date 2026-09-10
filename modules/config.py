@@ -153,6 +153,10 @@ class ArchiveConfig:
             raise ValueError("Custom source must be a schema.table or schema.view identifier")
         if not re.fullmatch(r"[A-Za-z0-9_$]+", config.custom_timestamp_column):
             raise ValueError("Custom timestamp column is invalid")
+        for label, records in (("source connection", config.source_connections), ("archive connection", config.archive_connections), ("source table", config.source_tables), ("archive table", config.archive_tables), ("mapping", config.source_mappings)):
+            names = [record.get("name", "") for record in records]
+            if not all(names) or len(names) != len(set(names)):
+                raise ValueError(f"Each {label} requires a unique name")
         for source in config.custom_sources:
             if not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", source["source"]) or not re.fullmatch(r"[A-Za-z0-9_$]+", source["timestamp_column"]):
                 raise ValueError("Each custom source requires schema.table and a timestamp column")
@@ -161,6 +165,13 @@ class ArchiveConfig:
             if mapping.get("enabled", "true").lower() in {"false", "0", "no", "off"}:
                 continue
             source_table = next((item for item in config.source_tables if item.get("name") == mapping.get("source_table")), mapping)
+            archive_table = next((item for item in config.archive_tables if item.get("name") == mapping.get("archive_table_ref")), None)
+            if source_table is mapping or not archive_table:
+                raise ValueError("Each enabled mapping must reference an existing source table and archive table")
+            if not any(item.get("name") == source_table.get("connection") for item in config.source_connections):
+                raise ValueError("Each mapped source table must reference an existing source connection")
+            if not any(item.get("name") == archive_table.get("connection") for item in config.archive_connections):
+                raise ValueError("Each mapped archive table must reference an existing archive connection")
             source_name = source_table.get("source") or mapping.get("source", "")
             timestamp = source_table.get("timestamp_column") or mapping.get("timestamp_column", "")
             if not mapping.get("name") or not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", source_name) or not re.fullmatch(r"[A-Za-z0-9_$]+", timestamp):

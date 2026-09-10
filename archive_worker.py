@@ -10,6 +10,7 @@ from pathlib import Path
 from modules.archive_service import run_archive_cycle
 from modules.config import ArchiveConfig, config_file
 from modules.job_state import record
+from modules.execution_lock import archive_execution_lock
 
 
 def _interval(value: str) -> timedelta:
@@ -54,7 +55,12 @@ def main() -> int:
         if not _due(config):
             logging.info("archive cycle not due; schedule=%s", config.schedule)
             return 0
-        result = run_archive_cycle(config)
+        with archive_execution_lock(config_file().parent) as acquired:
+            if not acquired:
+                logging.info("archive cycle skipped; another execution is active")
+                record("Skipped", detail="Another archive execution is active")
+                return 0
+            result = run_archive_cycle(config)
         _mark_success()
         record("Succeeded", **result, schedule=config.schedule, log_type=config.log_type)
         logging.info("archive cycle complete: %s", json.dumps(result, default=str))
