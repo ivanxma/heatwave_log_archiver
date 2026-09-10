@@ -14,8 +14,15 @@
       {% elif kind == 'source-tables' %}
       <label>Name *<input name="name" value="{{ item.get('name', '') }}" required></label>
       <label>Source connection *<select name="connection" required>{% for c in source_connections %}<option value="{{ c.name }}" {{ 'selected' if item.get('connection') == c.name else '' }}>{{ c.name }}</option>{% endfor %}</select></label>
-      <label>Schema.table or view *<input name="source" value="{{ item.get('source', '') }}" required></label>
-      <label>Timestamp column *<input name="timestamp_column" value="{{ item.get('timestamp_column', 'event_time') }}" required></label>
+      <label>Source type *<select id="source-type" name="source_type" required>
+        {% set current_type = item.get('source_type', 'custom') %}
+        <option value="error_log" {{ 'selected' if current_type == 'error_log' else '' }}>Error log</option>
+        <option value="general_log" {{ 'selected' if current_type == 'general_log' else '' }}>General log</option>
+        <option value="slow_log" {{ 'selected' if current_type == 'slow_log' else '' }}>Slow log</option>
+        <option value="custom" {{ 'selected' if current_type == 'custom' else '' }}>Custom</option>
+      </select></label>
+      <label>Schema.table or view *<input id="source-name" name="source" value="{{ item.get('source', '') }}" required></label>
+      <label>Timestamp column *<input id="timestamp-column" name="timestamp_column" value="{{ item.get('timestamp_column', 'event_time') }}" required></label>
       {% elif kind == 'archive-tables' %}
       <label>Name *<input name="name" value="{{ item.get('name', '') }}" required></label>
       <label>Archive connection *<select name="connection" required>{% for c in archive_connections %}<option value="{{ c.name }}" {{ 'selected' if item.get('connection') == c.name else '' }}>{{ c.name }}</option>{% endfor %}</select></label>
@@ -31,4 +38,22 @@
     <div class="form-actions"><button type="submit">Save</button><button type="button" onclick="location.href='{{ url_for('configuration') }}'">Cancel</button></div>
   </form>
 </section>
+{% if kind == 'source-tables' %}
+<script>
+(() => {
+  const presets = { error_log: ['performance_schema.error_log', 'LOGGED'], general_log: ['mysql.general_log', 'event_time'], slow_log: ['mysql.slow_log', 'start_time'] };
+  const type = document.getElementById('source-type');
+  const source = document.getElementById('source-name');
+  const timestamp = document.getElementById('timestamp-column');
+  const applyPreset = () => {
+    const preset = presets[type.value];
+    const custom = !preset;
+    source.readOnly = !custom; timestamp.readOnly = !custom;
+    source.setAttribute('aria-readonly', String(!custom)); timestamp.setAttribute('aria-readonly', String(!custom));
+    if (preset) { source.value = preset[0]; timestamp.value = preset[1]; }
+  };
+  type.addEventListener('change', applyPreset); applyPreset();
+})();
+</script>
+{% endif %}
 {% endblock %}

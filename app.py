@@ -37,6 +37,11 @@ def prevent_stale_html(response):
     return response
 PROFILE_STORE_PATH = Path(os.environ.get("ERROR_ARCHIVER_PROFILE_STORE", "profiles.json"))
 SERVER_SESSIONS = ServerSessionStore(int(os.environ.get("ERROR_ARCHIVER_SESSION_TTL", "3600")))
+SOURCE_TABLE_PRESETS = {
+    "error_log": ("performance_schema.error_log", "LOGGED"),
+    "general_log": ("mysql.general_log", "event_time"),
+    "slow_log": ("mysql.slow_log", "start_time"),
+}
 # Navigation reuses a recent server-side health result. Login and database
 # operations still establish their own live connections when they are needed.
 SESSION_HEALTH_CHECK_SECONDS = max(1, int(os.environ.get("ERROR_ARCHIVER_SESSION_HEALTH_CHECK_SECONDS", "300")))
@@ -283,7 +288,7 @@ def configuration():
 _ENTITY_FIELDS = {
     "source-connections": ("source_connections", ("name", "host", "port", "user", "secret_ocid", "socket")),
     "archive-connections": ("archive_connections", ("name", "host", "port", "user", "secret_ocid", "socket")),
-    "source-tables": ("source_tables", ("name", "connection", "source", "timestamp_column")),
+    "source-tables": ("source_tables", ("name", "connection", "source_type", "source", "timestamp_column")),
     "archive-tables": ("archive_tables", ("name", "connection", "archive_db", "archive_table")),
     "mappings": ("source_mappings", ("name", "source_table", "archive_table_ref", "enabled")),
 }
@@ -297,8 +302,22 @@ def configuration_entity(kind: str, index: int):
         return redirect(url_for("configuration"))
     key, fields = _ENTITY_FIELDS[kind]
     settings = _settings(); original = settings.copy(); items = list(settings.get(key, [])); item = items[index] if 0 <= index < len(items) else {}
+    if kind == "source-tables" and item and not item.get("source_type"):
+        item = item.copy()
+        item["source_type"] = next(
+            (kind for kind, preset in SOURCE_TABLE_PRESETS.items()
+             if (item.get("source"), item.get("timestamp_column")) == preset),
+            "custom",
+        )
     if request.method == "POST":
         candidate = {field: request.form.get(field, "").strip() for field in fields}
+        if kind == "source-tables":
+            source_type = candidate.get("source_type", "custom")
+            if source_type in SOURCE_TABLE_PRESETS:
+                candidate["source"], candidate["timestamp_column"] = SOURCE_TABLE_PRESETS[source_type]
+            elif source_type != "custom":
+                flash("Select a supported source type.", "error")
+                return render_dashboard("entity_form.html", kind=kind, item=candidate, index=index, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), active_menu="configuration")
         if kind == "mappings":
             candidate["enabled"] = "true" if request.form.get("enabled") == "on" else "false"
         updated = items[:index] + [candidate] + items[index + 1:] if index >= 0 else [*items, candidate]
