@@ -74,7 +74,7 @@ document.querySelectorAll('[data-tab-view]').forEach((view) => {
     const context = canvas.getContext('2d');
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, width, height);
-    const left = 54, right = width - 14, top = 22, bottom = 142;
+    const left = 70, right = width - 14, top = 22, bottom = 142;
     context.strokeStyle = '#94a3b8'; context.lineWidth = 1;
     context.beginPath(); context.moveTo(left, top); context.lineTo(left, bottom); context.lineTo(right, bottom); context.stroke();
     if (!activity.length) {
@@ -85,8 +85,8 @@ document.querySelectorAll('[data-tab-view]').forEach((view) => {
     const maximum = Math.max(1, ...activity.map((item) => Number(item.count) || 0));
     const slot = (right - left) / activity.length;
     context.font = '11px system-ui'; context.fillStyle = '#475569'; context.strokeStyle = '#e2e8f0';
-    [0, 0.5, 1].forEach((fraction) => { const y = bottom - fraction * (bottom - top); context.beginPath(); context.moveTo(left, y); context.lineTo(right, y); context.stroke(); context.fillText(String(Math.round(maximum * fraction)), 8, y + 4); });
-    context.save(); context.translate(13, 94); context.rotate(-Math.PI / 2); context.fillText('Records archived', 0, 0); context.restore();
+    [0, 0.5, 1].forEach((fraction) => { const y = bottom - fraction * (bottom - top); context.beginPath(); context.moveTo(left, y); context.lineTo(right, y); context.stroke(); context.fillText(String(Math.round(maximum * fraction)), 30, y + 4); });
+    context.save(); context.translate(14, 94); context.rotate(-Math.PI / 2); context.fillText('Records archived', 0, 0); context.restore();
     activity.forEach((item, index) => {
       const count = Number(item.count) || 0;
       const barHeight = Math.max(count ? 3 : 0, (count / maximum) * (bottom - top));
