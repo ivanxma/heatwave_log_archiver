@@ -5,6 +5,7 @@ import json
 import csv
 import io
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 
 from .config import ArchiveConfig
@@ -143,11 +144,20 @@ def prune_expired_partitions(config: ArchiveConfig) -> list[str]:
 
 
 def run_archive_cycle(config: ArchiveConfig) -> dict[str, object]:
-    ensure_schema(config)
-    copied, source_cursors = archive_error_log(config)
-    dropped = prune_expired_partitions(config)
-    added = ensure_future_partitions(config)
-    return {"copied": copied, "partitions_added": added, "partitions_dropped": dropped, "source_cursors": source_cursors, "source_log_types": list(config.log_types)}
+    configs = [config, *(config.for_mapping(mapping) for mapping in config.source_mappings)]
+    def process(item: ArchiveConfig) -> tuple[int, list[str], list[str], dict[str, str]]:
+        ensure_schema(item)
+        item_copied, item_cursors = archive_error_log(item)
+        return item_copied, ensure_future_partitions(item), prune_expired_partitions(item), item_cursors
+    copied, added, dropped, cursors = 0, [], [], {}
+    with ThreadPoolExecutor(max_workers=min(config.worker_threads, len(configs))) as executor:
+        for item_copied, item_added, item_dropped, item_cursors in executor.map(process, configs):
+            copied += item_copied
+            added.extend(item_added)
+            dropped.extend(item_dropped)
+            cursors.update(item_cursors)
+    source_types = [*config.log_types, *(f"mapping:{mapping['name']}" for mapping in config.source_mappings)]
+    return {"copied": copied, "partitions_added": added, "partitions_dropped": dropped, "source_cursors": cursors, "source_log_types": source_types}
 
 
 def list_partitions(config: ArchiveConfig) -> list[dict[str, object]]:

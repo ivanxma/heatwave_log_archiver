@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from .secret_provider import clear_credential_cache, vault_credential
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 def config_file() -> Path:
@@ -48,6 +48,7 @@ class ArchiveConfig:
     custom_source: str
     custom_timestamp_column: str
     custom_sources: tuple[dict[str, str], ...]
+    source_mappings: tuple[dict[str, str], ...]
     source_host: str
     source_port: int
     source_user: str
@@ -64,6 +65,7 @@ class ArchiveConfig:
     archive_table: str
     retention_months: int
     batch_size: int
+    worker_threads: int
     schedule: str
 
     @classmethod
@@ -76,6 +78,7 @@ class ArchiveConfig:
         raw_types = _value("ERROR_ARCHIVER_LOG_TYPES", log_type, settings)
         log_types = tuple(item.strip() for item in raw_types.split(",") if item.strip())
         custom_sources = settings.get("custom_sources", []) if isinstance(settings.get("custom_sources", []), list) else []
+        source_mappings = settings.get("source_mappings", []) if isinstance(settings.get("source_mappings", []), list) else []
         if _value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings):
             custom_sources = [*custom_sources, {"name": "custom", "source": _value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings), "timestamp_column": _value("ERROR_ARCHIVER_CUSTOM_TIMESTAMP_COLUMN", "event_time", settings)}]
         source_secret_ocid = _value("ERROR_ARCHIVER_SOURCE_SECRET_OCID", settings=settings)
@@ -93,6 +96,7 @@ class ArchiveConfig:
             custom_source=_value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings),
             custom_timestamp_column=_value("ERROR_ARCHIVER_CUSTOM_TIMESTAMP_COLUMN", "event_time", settings),
             custom_sources=tuple({"name": str(item.get("name", "custom")), "source": str(item.get("source", "")), "timestamp_column": str(item.get("timestamp_column", "event_time"))} for item in custom_sources if isinstance(item, dict)),
+            source_mappings=tuple({key: str(value) for key, value in item.items()} for item in source_mappings if isinstance(item, dict)),
             source_host=source_host,
             source_port=_positive_int("ERROR_ARCHIVER_SOURCE_PORT", 3306, settings),
             source_user=source_user, source_password=source_password, source_secret_ocid=source_secret_ocid,
@@ -105,6 +109,7 @@ class ArchiveConfig:
             archive_table=_value("ERROR_ARCHIVER_ARCHIVE_TABLE", "performance_schema_error_log_archive", settings),
             retention_months=_positive_int("ERROR_ARCHIVER_RETENTION_MONTHS", 12, settings),
             batch_size=_positive_int("ERROR_ARCHIVER_BATCH_SIZE", 5000, settings),
+            worker_threads=_positive_int("ERROR_ARCHIVER_WORKER_THREADS", 4, settings),
             schedule=_value("ERROR_ARCHIVER_SCHEDULE", "5min", settings),
         )
         if not config.source_user or not config.archive_user:
@@ -120,7 +125,26 @@ class ArchiveConfig:
         for source in config.custom_sources:
             if not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", source["source"]) or not re.fullmatch(r"[A-Za-z0-9_$]+", source["timestamp_column"]):
                 raise ValueError("Each custom source requires schema.table and a timestamp column")
+        for mapping in config.source_mappings:
+            if not mapping.get("name") or not re.fullmatch(r"[A-Za-z0-9_$]+\.[A-Za-z0-9_$]+", mapping.get("source", "")) or not re.fullmatch(r"[A-Za-z0-9_$]+", mapping.get("timestamp_column", "")):
+                raise ValueError("Each source mapping requires a name, schema.table/view, and timestamp column")
         return config
+
+    def for_mapping(self, mapping: dict[str, str]) -> "ArchiveConfig":
+        """Resolve one source-to-archive mapping only when the worker executes it."""
+        source_user = mapping.get("source_user") or self.source_user
+        archive_user = mapping.get("archive_user") or self.archive_user
+        source_secret = mapping.get("source_secret_ocid") or self.source_secret_ocid
+        archive_secret = mapping.get("archive_secret_ocid") or self.archive_secret_ocid
+        source_user, source_password = vault_credential(source_secret, source_user)
+        archive_user, archive_password = vault_credential(archive_secret, archive_user)
+        return replace(
+            self,
+            log_types=(), custom_sources=({"name": mapping["name"], "source": mapping["source"], "timestamp_column": mapping["timestamp_column"]},),
+            source_host=mapping.get("source_host") or self.source_host, source_port=int(mapping.get("source_port") or self.source_port), source_user=source_user, source_password=source_password, source_secret_ocid=source_secret, source_socket=mapping.get("source_socket") or self.source_socket,
+            archive_host=mapping.get("archive_host") or self.archive_host, archive_port=int(mapping.get("archive_port") or self.archive_port), archive_user=archive_user, archive_password=archive_password, archive_secret_ocid=archive_secret, archive_socket=mapping.get("archive_socket") or self.archive_socket,
+            archive_db=mapping.get("archive_db") or self.archive_db, archive_table=mapping.get("archive_table") or self.archive_table,
+        )
 
 
 def save_settings(settings: dict[str, object]) -> None:

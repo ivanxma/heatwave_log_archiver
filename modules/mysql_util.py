@@ -12,6 +12,7 @@ from .config import ArchiveConfig
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_$]+$")
 _CONNECTION_CACHE: dict[tuple[str, int, str, str, str], object] = {}
+_CONNECTION_LOCKS: dict[tuple[str, int, str, str, str], threading.RLock] = {}
 _CACHE_LOCK = threading.RLock()
 
 
@@ -40,6 +41,7 @@ def clear_connection_cache() -> None:
     with _CACHE_LOCK:
         connections = list(_CONNECTION_CACHE.values())
         _CONNECTION_CACHE.clear()
+        _CONNECTION_LOCKS.clear()
     for connection in connections:
         try:
             connection.close()
@@ -48,7 +50,9 @@ def clear_connection_cache() -> None:
 
 
 def _drop_connection(key: tuple[str, int, str, str, str], connection: object) -> None:
-    _CONNECTION_CACHE.pop(key, None)
+    with _CACHE_LOCK:
+        if _CONNECTION_CACHE.get(key) is connection:
+            _CONNECTION_CACHE.pop(key, None)
     try:
         connection.close()
     except Exception:
@@ -60,13 +64,19 @@ def _cached_connection(host: str, port: int, user: str, password: str, socket: s
     """Borrow a verified MySQL connection held only in this process's memory."""
     key = _connection_key(host, port, user, password, socket)
     with _CACHE_LOCK:
-        connection = _CONNECTION_CACHE.get(key)
+        connection_lock = _CONNECTION_LOCKS.setdefault(key, threading.RLock())
+    # One operation at a time per connection; different connection identities
+    # may run concurrently in mapping worker threads.
+    with connection_lock:
+        with _CACHE_LOCK:
+            connection = _CONNECTION_CACHE.get(key)
         try:
             if connection is None or not connection.is_connected():
                 if connection is not None:
                     _drop_connection(key, connection)
                 connection = _connection(host, port, user, password, socket)
-                _CONNECTION_CACHE[key] = connection
+                with _CACHE_LOCK:
+                    _CONNECTION_CACHE[key] = connection
             # Validate each reused connection before it is handed to a caller.
             cursor = connection.cursor()
             cursor.execute("SELECT 1")

@@ -250,7 +250,7 @@ def execution_history_export_csv():
 @app.route("/configuration", methods=["GET", "POST"])
 @profile_manager_required
 def configuration():
-    fields = ("source_secret_ocid", "archive_secret_ocid", "source_host", "source_port", "source_user", "source_socket", "archive_host", "archive_port", "archive_user", "archive_socket", "archive_db", "archive_table", "retention_months", "batch_size", "schedule")
+    fields = ("source_secret_ocid", "archive_secret_ocid", "source_host", "source_port", "source_user", "source_socket", "archive_host", "archive_port", "archive_user", "archive_socket", "archive_db", "archive_table", "retention_months", "batch_size", "worker_threads", "schedule")
     if request.method == "POST":
         original = _settings()
         settings = original.copy()
@@ -272,7 +272,7 @@ def configuration():
             save_settings(original)
             flash(f"Configuration was not accepted: {exc}", "error")
     settings = _settings()
-    return render_dashboard("configuration.html", settings=settings, config=ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False), custom_sources=settings.get("custom_sources", []), active_menu="configuration")
+    return render_dashboard("configuration.html", settings=settings, config=ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False), source_mappings=settings.get("source_mappings", []), active_menu="configuration")
 
 
 @app.route("/custom-sources/<int:index>", methods=["GET", "POST"])
@@ -280,14 +280,15 @@ def configuration():
 @profile_manager_required
 def custom_source_form(index: int):
     settings = _settings()
-    sources = list(settings.get("custom_sources", []))
-    current = sources[index] if 0 <= index < len(sources) else {"name": "", "source": "", "timestamp_column": "event_time"}
+    sources = list(settings.get("source_mappings", []))
+    current = sources[index] if 0 <= index < len(sources) else {}
     if request.method == "POST":
-        item = {"name": request.form.get("name", "").strip(), "source": request.form.get("source", "").strip(), "timestamp_column": request.form.get("timestamp_column", "").strip()}
+        fields = ("name", "source", "timestamp_column", "source_host", "source_port", "source_user", "source_secret_ocid", "source_socket", "archive_host", "archive_port", "archive_user", "archive_secret_ocid", "archive_socket", "archive_db", "archive_table")
+        item = {field: request.form.get(field, "").strip() for field in fields}
         if not item["name"]:
             flash("Custom source name is required.", "error")
         else:
-            candidate = {**settings, "custom_sources": sources[:index] + [item] + sources[index + 1:] if index >= 0 else [*sources, item]}
+            candidate = {**settings, "source_mappings": sources[:index] + [item] + sources[index + 1:] if index >= 0 else [*sources, item]}
             try:
                 save_settings(candidate)
                 ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
@@ -296,17 +297,17 @@ def custom_source_form(index: int):
             except Exception as exc:
                 save_settings(settings)
                 flash(str(exc), "error")
-    return render_dashboard("custom_source_form.html", source=current, index=index, active_menu="configuration")
+    return render_dashboard("custom_source_form.html", source=current, index=index, settings=settings, config=ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False), active_menu="configuration")
 
 
 @app.post("/custom-sources/<int:index>/delete")
 @profile_manager_required
 def custom_source_delete(index: int):
     settings = _settings()
-    sources = list(settings.get("custom_sources", []))
+    sources = list(settings.get("source_mappings", []))
     if 0 <= index < len(sources):
         del sources[index]
-        settings["custom_sources"] = sources
+        settings["source_mappings"] = sources
         save_settings(settings)
         flash("Custom source deleted.", "success")
     return redirect(url_for("configuration"))
