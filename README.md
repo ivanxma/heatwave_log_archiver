@@ -37,7 +37,7 @@ After installation, browse to `https://<public-ip>/`, create/select a non-secret
 
 - **Archive DB setup** configures a local or remote archive MySQL destination and creates the schema/table/partitions after confirmation.
 - **Job configuration** enables/disables the job, selects multiple built-in logs, maintains optional table/view sources, controls schedule, retention, and batch size.
-- **Archive** shows execution summary, 24-hour activity, paged source/partition-filtered records, and partition lifecycle controls.
+- **Archive** uses a three-tab view: **Summary** shows current scheduler status and a 24-hour records-archived chart; **Archived entries** provides paged, source- and partition-filtered records with export and reset-layout controls; **Partitions** provides lifecycle actions and partition downloads.
 - The systemd timer wakes every minute; the worker applies the configured interval without a service restart.
 
 View worker activity with `journalctl -u error-log-archiver.service`.
