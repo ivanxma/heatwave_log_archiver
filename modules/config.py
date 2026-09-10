@@ -132,3 +132,6 @@ def save_settings(settings: dict[str, object]) -> None:
     temp.chmod(0o600)
     temp.replace(path)
     clear_credential_cache()
+    # Delay import to avoid the config/MySQL utility import cycle at startup.
+    from .mysql_util import clear_connection_cache
+    clear_connection_cache()
