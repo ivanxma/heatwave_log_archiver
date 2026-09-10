@@ -161,6 +161,9 @@ def dashboard():
     page_size = request.args.get("page_size", 50, type=int)
     selected_partition = request.args.get("partition", "")
     selected_source = request.args.get("source", "")
+    selected_tab = request.args.get("tab", "summary")
+    if selected_tab not in {"summary", "entries", "partitions"}:
+        selected_tab = "summary"
     try:
         partitions = list_partitions(config)
         rows, total_rows = fetch_archive_page(config, page, page_size, selected_partition, selected_source)
@@ -178,7 +181,7 @@ def dashboard():
                 activity.append({"time": when.strftime("%H:%M"), "count": int(event.get("copied", 0) or 0), "status": event.get("status", "")})
         except (KeyError, ValueError, TypeError):
             continue
-    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, source_options=source_options, error=error, job_state=job_state, activity=activity, active_menu="archive")
+    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, activity=activity, active_menu="archive")
 
 
 @app.get("/archive-export.csv")
@@ -317,7 +320,7 @@ def partitions_ensure():
         flash("Archive schema and future partitions are ready.", "success")
     except Exception as exc:
         flash(f"Partition maintenance failed: {exc}", "error")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", tab="partitions"))
 
 
 @app.post("/partitions/prepare")
@@ -329,7 +332,7 @@ def partitions_prepare():
         flash(f"Future partition preparation completed; {len(added)} partition(s) added.", "success")
     except Exception as exc:
         flash(f"Future partition preparation failed: {exc}", "error")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", tab="partitions"))
 
 
 @app.post("/partitions/<partition_name>/truncate")
@@ -340,7 +343,7 @@ def partition_truncate(partition_name: str):
         flash(f"Partition {partition_name} was emptied.", "success")
     except Exception as exc:
         flash(f"Could not empty partition: {exc}", "error")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", tab="partitions"))
 
 
 @app.post("/partitions/<partition_name>/drop")
@@ -351,7 +354,7 @@ def partition_drop(partition_name: str):
         flash(f"Partition {partition_name} was deleted.", "success")
     except Exception as exc:
         flash(f"Could not delete partition: {exc}", "error")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", tab="partitions"))
 
 
 @app.post("/partitions/bulk")
@@ -361,7 +364,7 @@ def partitions_bulk():
     names = request.form.getlist("partitions")
     if not names:
         flash("Select at least one monthly partition.", "error")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard", tab="partitions"))
     try:
         operation = truncate_partition if action == "empty" else drop_partition if action == "delete" else None
         if not operation:
@@ -371,7 +374,7 @@ def partitions_bulk():
         flash(f"{len(names)} partition(s) {('emptied' if action == 'empty' else 'deleted')}.", "success")
     except Exception as exc:
         flash(f"Partition action failed: {exc}", "error")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", tab="partitions"))
 
 
 @app.post("/partitions/download")
@@ -380,13 +383,13 @@ def partitions_download():
     names = request.form.getlist("partitions")
     if not names:
         flash("Select at least one monthly partition to download.", "error")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard", tab="partitions"))
     try:
         payload = selected_partitions_zip(ArchiveConfig.from_env(resolve_source_secret=False), names)
         return Response(payload, mimetype="application/zip", headers={"Content-Disposition": "attachment; filename=selected-archive-partitions.zip"})
     except Exception as exc:
         flash(f"Partition download failed: {exc}", "error")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard", tab="partitions"))
 
 
 def render_dashboard(page_template: str, **context):
