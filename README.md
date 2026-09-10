@@ -14,7 +14,7 @@ Create each Vault secret as either a plain password or JSON:
 {"username":"archive_user","password":"replace-me"}
 ```
 
-Grant the VM dynamic group permission to read the Secret OCIDs, then use **Job configuration** to enter source/archive Vault Secret OCIDs and enable the job. See [archive architecture](docs/archive-architecture.md) for the full workflow.
+Grant the VM dynamic group permission to read the Secret OCIDs, then use **Job configuration** to enter source/archive Vault Secret OCIDs and enable the job. See [archive architecture](docs/archive-architecture.md) for the concise workflow and the [detailed log-archiving architecture](docs/log-archiving-detailed-architecture.md) for deployment, security, idempotency, and lifecycle details.
 
 ## Install on Oracle Linux 9
 
