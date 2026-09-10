@@ -209,11 +209,13 @@ def configuration():
     if request.method == "POST":
         original = _settings()
         settings = original.copy()
-        settings["enabled"] = request.form.get("enabled") == "on"
-        settings["log_types"] = ",".join(request.form.getlist("log_types"))
+        section = request.form.get("configuration_section", "")
+        if section == "policy":
+            settings["enabled"] = request.form.get("enabled") == "on"
+            settings["log_types"] = ",".join(request.form.getlist("log_types"))
         for field in fields:
-            submitted = request.form.get(field, "").strip()
-            settings[field] = submitted
+            if field in request.form:
+                settings[field] = request.form.get(field, "").strip()
         settings.pop("source_password", None)
         settings.pop("archive_password", None)
         try:

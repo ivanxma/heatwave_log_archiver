@@ -1,27 +1,30 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="page-heading"><div><p class="eyebrow">Scheduled service</p><h1>Job scheduling and configuration</h1><p>Passwords are retrieved at runtime from OCI Vault. Store Vault Secret OCIDs only.</p></div></section>
-<form method="post" class="config">
-  <fieldset><legend>Sources and policy</legend>
-    <label class="checkbox-field"><input type="checkbox" name="enabled" {{ 'checked' if settings.get('enabled', config.enabled) else '' }}><span>Enable archive job</span></label>
-    <label class="checkbox-field"><input type="checkbox" name="log_types" value="error_log" {{ 'checked' if 'error_log' in config.log_types else '' }}><span>Error log</span></label>
-    <label class="checkbox-field"><input type="checkbox" name="log_types" value="slow_log" {{ 'checked' if 'slow_log' in config.log_types else '' }}><span>Slow log</span></label>
-    <label class="checkbox-field"><input type="checkbox" name="log_types" value="general_log" {{ 'checked' if 'general_log' in config.log_types else '' }}><span>General log</span></label>
-    <label>Run every<input name="schedule" value="{{ settings.get('schedule', config.schedule) }}"></label>
-    <label>Retention months<input name="retention_months" value="{{ settings.get('retention_months', config.retention_months) }}"></label>
-    <label>Batch size<input name="batch_size" value="{{ settings.get('batch_size', config.batch_size) }}"></label>
-  </fieldset>
-  <fieldset><legend>Source MySQL</legend>
-    <label>Host<input name="source_host" value="{{ settings.get('source_host', config.source_host) }}"></label><label>Port<input name="source_port" value="{{ settings.get('source_port', config.source_port) }}"></label><label>User<input name="source_user" value="{{ settings.get('source_user', config.source_user) }}"></label><label>Vault Secret OCID<input name="source_secret_ocid" value="{{ settings.get('source_secret_ocid', config.source_secret_ocid) }}"></label><label>Socket (optional)<input name="source_socket" value="{{ settings.get('source_socket', config.source_socket) }}"></label>
-  </fieldset>
-  <fieldset><legend>Archive MySQL</legend>
-    <label>Host<input name="archive_host" value="{{ settings.get('archive_host', config.archive_host) }}"></label><label>Port<input name="archive_port" value="{{ settings.get('archive_port', config.archive_port) }}"></label><label>User<input name="archive_user" value="{{ settings.get('archive_user', config.archive_user) }}"></label><label>Vault Secret OCID<input name="archive_secret_ocid" value="{{ settings.get('archive_secret_ocid', config.archive_secret_ocid) }}"></label><label>Socket (optional)<input name="archive_socket" value="{{ settings.get('archive_socket', config.archive_socket) }}"></label><label>Database<input name="archive_db" value="{{ settings.get('archive_db', config.archive_db) }}"></label><label>Table<input name="archive_table" value="{{ settings.get('archive_table', config.archive_table) }}"></label>
-  </fieldset>
-  <div class="form-actions"><button>Save configuration</button></div>
-</form>
 
-<section>
-  <div class="table-toolbar"><div><h2>Optional tables and views</h2><p>Add an audit table or view, or any source with a timestamp column, to include it in every scheduled archive cycle.</p></div><a class="icon-button" href="{{ url_for('custom_source_form') }}">Add source</a></div>
-  <div class="tablewrap"><table class="listing-table"><thead><tr><th>Display name</th><th>Table or view</th><th>Timestamp column</th><th>Actions</th></tr></thead><tbody>{% for source in custom_sources %}<tr><td>{{ source.name }}</td><td>{{ source.source }}</td><td>{{ source.timestamp_column }}</td><td><div class="action-group"><a class="icon-button" href="{{ url_for('custom_source_form', index=loop.index0) }}">Edit</a><form method="post" action="{{ url_for('custom_source_delete', index=loop.index0) }}" onsubmit="return confirm('Delete optional source {{ source.name }}?')"><button>Delete</button></form></div></td></tr>{% else %}<tr><td colspan="4">No optional tables or views are configured.</td></tr>{% endfor %}</tbody></table></div>
+<section class="tab-view" data-tab-view>
+  <div class="tab-list" role="tablist">
+    <button class="tab active" role="tab" aria-selected="true" aria-controls="policy-settings">Job policy</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="source-settings">Source connection</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="archive-settings">Archive destination</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="optional-sources">Optional tables/views <span>{{ custom_sources|length }}</span></button>
+  </div>
+
+  <div class="tab-panel" id="policy-settings">
+    <form method="post" class="config"><input type="hidden" name="configuration_section" value="policy"><fieldset><legend>Schedule and log types</legend><label class="checkbox-field"><input type="checkbox" name="enabled" {{ 'checked' if settings.get('enabled', config.enabled) else '' }}><span>Enable archive job</span></label><label class="checkbox-field"><input type="checkbox" name="log_types" value="error_log" {{ 'checked' if 'error_log' in config.log_types else '' }}><span>Error log</span></label><label class="checkbox-field"><input type="checkbox" name="log_types" value="slow_log" {{ 'checked' if 'slow_log' in config.log_types else '' }}><span>Slow log</span></label><label class="checkbox-field"><input type="checkbox" name="log_types" value="general_log" {{ 'checked' if 'general_log' in config.log_types else '' }}><span>General log</span></label><label>Run every<input name="schedule" value="{{ settings.get('schedule', config.schedule) }}"></label><label>Retention months<input name="retention_months" value="{{ settings.get('retention_months', config.retention_months) }}"></label><label>Batch size<input name="batch_size" value="{{ settings.get('batch_size', config.batch_size) }}"></label></fieldset><div class="form-actions"><button>Save job policy</button></div></form>
+  </div>
+
+  <div class="tab-panel" id="source-settings" hidden>
+    <form method="post" class="config"><input type="hidden" name="configuration_section" value="source"><fieldset><legend>Source MySQL</legend><label>Host<input name="source_host" value="{{ settings.get('source_host', config.source_host) }}"></label><label>Port<input name="source_port" value="{{ settings.get('source_port', config.source_port) }}"></label><label>User<input name="source_user" value="{{ settings.get('source_user', config.source_user) }}"></label><label>Vault Secret OCID<input name="source_secret_ocid" value="{{ settings.get('source_secret_ocid', config.source_secret_ocid) }}"></label><label>Socket (optional)<input name="source_socket" value="{{ settings.get('source_socket', config.source_socket) }}"></label></fieldset><div class="form-actions"><button>Save source connection</button></div></form>
+  </div>
+
+  <div class="tab-panel" id="archive-settings" hidden>
+    <form method="post" class="config"><input type="hidden" name="configuration_section" value="archive"><fieldset><legend>Archive MySQL</legend><label>Host<input name="archive_host" value="{{ settings.get('archive_host', config.archive_host) }}"></label><label>Port<input name="archive_port" value="{{ settings.get('archive_port', config.archive_port) }}"></label><label>User<input name="archive_user" value="{{ settings.get('archive_user', config.archive_user) }}"></label><label>Vault Secret OCID<input name="archive_secret_ocid" value="{{ settings.get('archive_secret_ocid', config.archive_secret_ocid) }}"></label><label>Socket (optional)<input name="archive_socket" value="{{ settings.get('archive_socket', config.archive_socket) }}"></label><label>Database<input name="archive_db" value="{{ settings.get('archive_db', config.archive_db) }}"></label><label>Table<input name="archive_table" value="{{ settings.get('archive_table', config.archive_table) }}"></label></fieldset><div class="form-actions"><button>Save archive destination</button></div></form>
+  </div>
+
+  <div class="tab-panel" id="optional-sources" hidden>
+    <div class="table-toolbar"><div><h2>Optional tables and views</h2><p>Add an audit table or view, or another source with a timestamp column, to include it in every scheduled archive cycle.</p></div><a class="icon-button" href="{{ url_for('custom_source_form') }}">Add source</a></div>
+    <div class="tablewrap"><table class="listing-table"><thead><tr><th>Display name</th><th>Table or view</th><th>Timestamp column</th><th>Actions</th></tr></thead><tbody>{% for source in custom_sources %}<tr><td>{{ source.name }}</td><td>{{ source.source }}</td><td>{{ source.timestamp_column }}</td><td><div class="action-group"><a class="icon-button" href="{{ url_for('custom_source_form', index=loop.index0) }}">Edit</a><form method="post" action="{{ url_for('custom_source_delete', index=loop.index0) }}" onsubmit="return confirm('Delete optional source {{ source.name }}?')"><button>Delete</button></form></div></td></tr>{% else %}<tr><td colspan="4">No optional tables or views are configured.</td></tr>{% endfor %}</tbody></table></div>
+  </div>
 </section>
 {% endblock %}
