@@ -31,6 +31,7 @@ def prevent_stale_html(response):
     return response
 PROFILE_STORE_PATH = Path(os.environ.get("ERROR_ARCHIVER_PROFILE_STORE", "profiles.json"))
 SERVER_SESSIONS = ServerSessionStore(int(os.environ.get("ERROR_ARCHIVER_SESSION_TTL", "3600")))
+SESSION_HEALTH_CHECK_SECONDS = max(1, int(os.environ.get("ERROR_ARCHIVER_SESSION_HEALTH_CHECK_SECONDS", "30")))
 ensure_profile_store(PROFILE_STORE_PATH)
 
 
@@ -41,13 +42,15 @@ def login_required(view):
         if session.get("session_scope") != "error-log-archiver" or not record:
             session.clear()
             return redirect(url_for("login"))
-        try:
-            test_mysql_connection(record["profile"], str(record["username"]), str(record["password"]))
-        except Exception:
-            SERVER_SESSIONS.delete(session.get("connection_id"))
-            session.clear()
-            flash("The selected MySQL profile is no longer reachable. Please sign in again.", "error")
-            return redirect(url_for("login"))
+        if SERVER_SESSIONS.health_check_due(session.get("connection_id"), SESSION_HEALTH_CHECK_SECONDS):
+            try:
+                test_mysql_connection(record["profile"], str(record["username"]), str(record["password"]))
+                SERVER_SESSIONS.mark_healthy(session.get("connection_id"))
+            except Exception:
+                SERVER_SESSIONS.delete(session.get("connection_id"))
+                session.clear()
+                flash("The selected MySQL profile is no longer reachable. Please sign in again.", "error")
+                return redirect(url_for("login"))
         return view(*args, **kwargs)
     return wrapped
 

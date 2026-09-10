@@ -12,8 +12,18 @@ class ServerSessionStore:
 
     def create(self, profile_name: str, username: str, password: str, profile: dict[str, object]) -> str:
         token = secrets.token_urlsafe(32)
-        self._records[token] = {"profile_name": profile_name, "username": username, "password": password, "profile": dict(profile), "expires_at": time.monotonic() + self.ttl_seconds}
+        self._records[token] = {"profile_name": profile_name, "username": username, "password": password, "profile": dict(profile), "expires_at": time.monotonic() + self.ttl_seconds, "last_health_check": time.monotonic()}
         return token
+
+    def health_check_due(self, token: str | None, interval_seconds: int) -> bool:
+        """Return whether a live connection check is due for this server-side session."""
+        record = self.get(token)
+        return not record or time.monotonic() - float(record.get("last_health_check", 0)) >= interval_seconds
+
+    def mark_healthy(self, token: str | None) -> None:
+        record = self.get(token)
+        if record:
+            record["last_health_check"] = time.monotonic()
 
     def get(self, token: str | None) -> dict[str, object] | None:
         record = self._records.get(token or "")
