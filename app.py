@@ -20,6 +20,15 @@ from modules.session_store import ServerSessionStore
 
 app = Flask(__name__)
 app.config.update(SECRET_KEY=os.environ.get("ERROR_ARCHIVER_WEB_SECRET", secrets.token_urlsafe(32)), SESSION_COOKIE_NAME="error_archiver_session", SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+
+
+@app.after_request
+def prevent_stale_html(response):
+    """Keep authenticated screens current after a deployment or configuration change."""
+    if response.mimetype == "text/html":
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["X-Error-Archiver-UI"] = "vault-first-login-v2"
+    return response
 PROFILE_STORE_PATH = Path(os.environ.get("ERROR_ARCHIVER_PROFILE_STORE", "profiles.json"))
 SERVER_SESSIONS = ServerSessionStore(int(os.environ.get("ERROR_ARCHIVER_SESSION_TTL", "3600")))
 ensure_profile_store(PROFILE_STORE_PATH)
