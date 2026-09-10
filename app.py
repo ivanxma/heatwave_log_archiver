@@ -41,6 +41,9 @@ def verify_csrf():
         expected = session.get("csrf_token", "")
         provided = request.form.get("csrf_token", "") or request.headers.get("X-CSRF-Token", "")
         if not expected or not hmac.compare_digest(expected, provided):
+            if request.endpoint == "login":
+                flash("Your sign-in form expired or was refreshed. Please submit the login form again.", "error")
+                return redirect(url_for("login"))
             from flask import abort
             abort(400, "Invalid form token.")
 
