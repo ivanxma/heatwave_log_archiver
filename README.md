@@ -16,6 +16,23 @@ Create each Vault secret as either a plain password or JSON:
 
 Grant the VM dynamic group permission to read the Secret OCIDs, then use **Job configuration** to enter source/archive Vault Secret OCIDs and enable the job. See the [detailed log-archiving architecture](docs/log-archiving-detailed-architecture.md) for deployment, security, idempotency, and lifecycle details.
 
+### Required OCI IAM policy
+
+The Compute VM must be a member of an OCI **dynamic group** because the scheduled worker uses an instance principal. Create a dynamic-group matching rule that scopes membership to this VM or, where appropriate, its dedicated Compute compartment. For example:
+
+```text
+ALL {instance.id = '<compute-instance-ocid>'}
+```
+
+Attach a least-privilege policy in the compartment that contains the Vault secrets. Prefer individual Secret OCIDs when source and archive credentials are known:
+
+```text
+Allow dynamic-group <archiver-dynamic-group> to read secret-bundles in compartment <vault-compartment> where target.secret.id = '<source-secret-ocid>'
+Allow dynamic-group <archiver-dynamic-group> to read secret-bundles in compartment <vault-compartment> where target.secret.id = '<archive-secret-ocid>'
+```
+
+If operationally necessary, the broader alternative is `Allow dynamic-group <archiver-dynamic-group> to read secret-bundles in compartment <vault-compartment>`. Do not grant `manage secret-family`, tenancy-wide secret access, or unrelated resource permissions to the archiver. IAM policy propagation can take a short time; validate access from the VM with an instance-principal Secret Bundle read before enabling the scheduled job.
+
 ## Install on a new Oracle Linux 9 VM
 
 Before connecting, allow TCP 22 from your administration IP in the OCI NSG/security list. Clone and install:
