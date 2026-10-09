@@ -3,12 +3,7 @@
 <section>
   <h1>Set up archive database</h1>
   {% if settings.get('configured') %}
-  <div class="flash success">Archive setup is saved.</div>
-  <dl>
-    <dt>Saved connection</dt><dd>{{ settings.get('archive_user', config.archive_user) }} @ {% if settings.get('archive_socket') %}{{ settings.archive_socket }}{% else %}{{ settings.get('archive_host', config.archive_host) }}:{{ settings.get('archive_port', config.archive_port) }}{% endif %}</dd>
-    <dt>Archive destination</dt><dd>{{ settings.get('archive_db', config.archive_db) }}.{{ settings.get('archive_table', config.archive_table) }}</dd>
-  </dl>
-  <p><a href="{{ url_for('configuration', config_tab='archive-connections') }}">View archive connections</a> · <a href="{{ url_for('configuration', config_tab='archive-tables') }}">View archive tables</a></p>
+  <p class="archive-saved-status">Archive setup is saved.</p>
   {% endif %}
   <p>Review or update the archive destination below. Credentials are fetched from OCI Vault when you confirm setup.</p>
   <form method="post" class="config">

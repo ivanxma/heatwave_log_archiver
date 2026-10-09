@@ -5,3 +5,5 @@
 .explore-chart{width:100%;min-width:0;max-width:100%}.explore-chart svg{display:block;width:100%;max-width:100%;height:320px}.chart-detail{min-height:1.5em;color:#475569;font-size:.9rem;overflow-wrap:anywhere}
 
 .explore-page-controls{justify-content:flex-start}.explore-page-number{width:5rem}.explore-page-controls button:disabled{background:#cbd5e1;color:#64748b;cursor:default}
+
+.archive-saved-status{display:inline-block;margin:0 0 .5rem;padding:.35rem .65rem;background:#dcfce7;color:#166534;border-radius:.4rem;font-size:.9rem;font-weight:650}

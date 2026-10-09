@@ -12,7 +12,7 @@ Opening the summary, configuration, or setup pages reads settings from the archi
 
 The web service runs one Gunicorn process with eight request threads. Threads keep idle HTTPS connections and slow database requests from blocking ordinary menu navigation. Keep one worker process because login sessions are stored in process memory.
 
-Successful archive setup registers the destination under **Job configuration → Archive Connection** and **Archive Tables**. Repeating setup reuses matching records. **Archive DB setup** also shows the saved connection and database/table without fetching Vault credentials; confirming setup connects to create or verify the archive schema.
+Successful archive setup registers the destination under **Job configuration → Archive Connection** and **Archive Tables**. Repeating setup reuses matching records. **Archive DB setup** shows the saved connection and database/table in its editable form without fetching Vault credentials; confirming setup connects to create or verify the archive schema.
 
 Source extraction replays the saved timestamp with `>=` and streams one query in batches, avoiding gaps between rows with identical timestamps. See [Incremental source retrieval and timestamp boundaries](docs/incremental-source-retrieval.md) for the algorithm, duplicate handling, diagnostics, and limits.
 
