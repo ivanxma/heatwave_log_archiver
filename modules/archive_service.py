@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import json
+import logging
 import csv
 import io
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import date, datetime, timezone
 
 from .config import ArchiveConfig
 from .job_state import load_state
 from .mysql_util import archive_connection, ident, source_connection
+from .control_store import check_cancelled
 
 
 def _month_start(value: date) -> date:
@@ -80,7 +83,7 @@ def ensure_future_partitions(config: ArchiveConfig, months_ahead: int = 2) -> li
     return added
 
 
-def archive_error_log(config: ArchiveConfig) -> int:
+def archive_error_log(config: ArchiveConfig) -> tuple[int, dict[str, str]]:
     """Copy the configured MySQL error, slow, or general log table."""
     ensure_schema(config)
     copied = 0
@@ -88,7 +91,7 @@ def archive_error_log(config: ArchiveConfig) -> int:
     cursors = dict(state.get("source_cursors", {}))
     final_cursors = dict(cursors)
     with source_connection(config) as source, archive_connection(config) as archive:
-        read = source.cursor(dictionary=True)
+        read = source.cursor(dictionary=True, buffered=False)
         write = archive.cursor()
         retention_floor = _month_start(_add_months(datetime.now(timezone.utc).date(), -config.retention_months))
         sources = {"error_log": ("performance_schema.error_log", "LOGGED"), "slow_log": ("mysql.slow_log", "start_time"), "general_log": ("mysql.general_log", "event_time")}
@@ -108,24 +111,32 @@ def archive_error_log(config: ArchiveConfig) -> int:
                 write.execute(f"UPDATE {_table(config)} SET log_type = %s WHERE log_type = %s", (log_type, cursor_key))
             checkpoint = cursors.get(cursor_key)
             final_cursor = checkpoint
+            # Replay the saved timestamp, including rows arriving at the boundary.
+            # Consume one result stream instead of re-querying by timestamp after
+            # each batch: equal timestamps cannot cause gaps or an endless loop.
+            floor = checkpoint or retention_floor
+            read.execute(f"SELECT * FROM {table_name} WHERE {timestamp_column} >= %s ORDER BY {timestamp_column} ASC", (floor,))
             while True:
-                floor = checkpoint or retention_floor
-                comparator = ">" if checkpoint else ">="
-                read.execute(f"SELECT * FROM {table_name} WHERE {timestamp_column} {comparator} %s ORDER BY {timestamp_column} ASC LIMIT %s", (floor, config.batch_size))
-                rows = read.fetchall()
+                check_cancelled()
+                rows = read.fetchmany(config.batch_size)
                 if not rows:
                     break
+                batch_start_count = copied
                 for row in rows:
                     event_time = row.pop(timestamp_column.upper(), row.pop(timestamp_column, None))
                     payload = json.dumps(row, default=str, sort_keys=True)
                     write.execute(sql, (event_time, log_type, payload, f"{cursor_key}|{event_time}|{payload}"))
                     copied += write.rowcount
                     final_cursor = event_time
-                checkpoint = final_cursor
-                if len(rows) < config.batch_size:
-                    break
+                if copied == batch_start_count:
+                    logging.info(
+                        "Archive source %s: read=%s inserted=0 ignored=%s batch_size=%s; "
+                        "records already exist or were ignored by INSERT IGNORE; continuing until the source result is exhausted",
+                        cursor_key, len(rows), len(rows), config.batch_size,
+                    )
             if final_cursor:
                 final_cursors[cursor_key] = str(final_cursor)
+        check_cancelled()
         archive.commit()
     return copied, final_cursors
 
@@ -162,7 +173,9 @@ def run_archive_cycle(config: ArchiveConfig) -> dict[str, object]:
         return item_copied, ensure_future_partitions(item), prune_expired_partitions(item), item_cursors
     copied, added, dropped, cursors = 0, [], [], {}
     with ThreadPoolExecutor(max_workers=min(config.worker_threads, len(configs))) as executor:
-        for item_copied, item_added, item_dropped, item_cursors in executor.map(process, configs):
+        futures = [executor.submit(copy_context().run, process, item) for item in configs]
+        for future in futures:
+            item_copied, item_added, item_dropped, item_cursors = future.result()
             copied += item_copied
             added.extend(item_added)
             dropped.extend(item_dropped)

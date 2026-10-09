@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 SECRET_FIELDS = {"password", "ssh_password", "token", "private_key"}
@@ -28,7 +29,9 @@ def load_profiles(path: Path) -> dict[str, dict[str, object]]:
 def write_profiles(path: Path, profiles: dict[str, dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps({"profiles": {name: _clean(value) for name, value in sorted(profiles.items())}}, indent=2) + "\n", encoding="utf-8")
+    payload = json.loads(path.read_text()) if path.exists() else {}
+    payload['profiles'] = {name: _clean(value) for name, value in sorted(profiles.items())}
+    temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     os.chmod(temp, 0o600)
     temp.replace(path)
 
@@ -46,6 +49,13 @@ def save_profile_from_form(path: Path, form) -> str:
     if mode not in {"tcp", "socket"}:
         raise ValueError("Profile mode must be TCP or socket.")
     profile: dict[str, object] = {"name": name, "mode": mode, "profile_management": form.get("profile_management") == "on"}
+    profile['control_schema'] = form.get('control_schema', '').strip()
+    profile['user'] = form.get('control_user', '').strip()
+    profile['secret_ocid'] = form.get('control_secret_ocid', '').strip()
+    if profile['control_schema'] and not re.fullmatch(r'[A-Za-z0-9_$]+', profile['control_schema']):
+        raise ValueError('Control schema must be a MySQL identifier.')
+    if profile['control_schema'] and not profile['secret_ocid'].startswith('ocid1.vaultsecret.'):
+        raise ValueError('An existing control schema requires a worker credential Secret OCID.')
     if mode == "socket":
         socket = str(form.get("socket", "")).strip()
         if not socket:
@@ -66,3 +76,15 @@ def save_profile_from_form(path: Path, form) -> str:
     profiles[name] = profile
     write_profiles(path, profiles)
     return name
+
+
+def activate_control_profile(path, name, profile):
+    profiles = load_profiles(path)
+    profiles[name] = profile
+    write_profiles(path, profiles)
+    payload = json.loads(path.read_text())
+    payload['active_control_profile'] = name
+    temp = path.with_suffix('.tmp')
+    temp.write_text(json.dumps(payload, indent=2) + '\n')
+    temp.chmod(0o600)
+    temp.replace(path)

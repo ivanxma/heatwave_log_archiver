@@ -34,11 +34,8 @@ def config_file() -> Path:
 
 
 def _settings() -> dict[str, object]:
-    path = config_file()
-    if not path.exists():
-        return {}
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    from .control_store import load_settings
+    return load_settings()
 
 
 def _value(name: str, default: str = "", settings: dict[str, object] | None = None) -> str:
@@ -117,7 +114,7 @@ class ArchiveConfig:
         if resolve_archive_secret:
             archive_user, archive_password = vault_credential(archive_secret_ocid, archive_user)
         config = cls(
-            enabled=_value("ERROR_ARCHIVER_ENABLED", "true", settings).lower() in {"1", "true", "yes", "on"},
+            enabled=_value("ERROR_ARCHIVER_ENABLED", "false", settings).lower() in {"1", "true", "yes", "on"},
             log_type=log_type,
             log_types=log_types,
             custom_source=_value("ERROR_ARCHIVER_CUSTOM_SOURCE", settings=settings),
@@ -143,7 +140,7 @@ class ArchiveConfig:
             worker_threads=_positive_int("ERROR_ARCHIVER_WORKER_THREADS", 4, settings),
             schedule=_value("ERROR_ARCHIVER_SCHEDULE", "5min", settings),
         )
-        if not config.source_mappings and (not config.source_user or not config.archive_user):
+        if config.enabled and not config.source_mappings and (not config.source_user or not config.archive_user):
             raise ValueError("Source and archive users are required")
         if not re.fullmatch(r"[1-9][0-9]*\s*(min|mins|minute|minutes|h|hour|hours)", config.schedule.lower()):
             raise ValueError("ERROR_ARCHIVER_SCHEDULE must look like '5min' or '1hour'")
@@ -232,13 +229,9 @@ class ArchiveConfig:
 
 
 def save_settings(settings: dict[str, object]) -> None:
-    """Atomically persist server-side settings (including DB passwords) with 0600 mode."""
-    path = config_file()
-    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-    temp.chmod(0o600)
-    temp.replace(path)
+    """Atomically persist job settings in the shared archive control schema."""
+    from .control_store import save_settings as persist
+    persist(settings)
     clear_credential_cache()
     # Delay import to avoid the config/MySQL utility import cycle at startup.
     from .mysql_util import clear_connection_cache

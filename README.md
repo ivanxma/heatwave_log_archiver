@@ -1,4 +1,4 @@
-# HeatWave Log Archiver
+# MySQL Log Archiver
 
 > **Demo and tutorial purpose:** This project is designed to demonstrate and teach secure MySQL log archival, OCI Vault integration, partition lifecycle management, and operational reporting. Review, test, and adapt its policies, privileges, retention, capacity, and TLS configuration before using it for production workloads.
 
@@ -8,13 +8,21 @@ Linux 9 service and HTTPS web console for archiving MySQL error, slow, general, 
 
 Scheduled-job database passwords are never persisted in application files, source code, browser storage, or logs. At execution time the service retrieves source and archive credentials from OCI Vault using the Compute instance principal. Credentials may exist briefly in protected process memory while a connection is active; configuration stores only non-secret connection details and Vault Secret OCIDs.
 
+Opening the summary, configuration, or setup pages reads settings from the archive control schema using session credentials, without contacting OCI Vault. Login and database operations still connect as needed; form actions periodically check login-profile connectivity. Archive entries and partition reports retrieve only archive credentials, cached in server memory for 300 seconds by default (`ERROR_ARCHIVER_VAULT_CACHE_SECONDS`). Credential changes clear that cache. Secret OCIDs must start with `ocid1.vaultsecret.`; vault OCIDs are rejected before calling OCI.
+
+The web service runs one Gunicorn process with eight request threads. Threads keep idle HTTPS connections and slow database requests from blocking ordinary menu navigation. Keep one worker process because login sessions are stored in process memory.
+
+Successful archive setup registers the destination under **Job configuration → Archive Connection** and **Archive Tables**. Repeating setup reuses matching records. **Archive DB setup** also shows the saved connection and database/table without fetching Vault credentials; confirming setup connects to create or verify the archive schema.
+
+Source extraction replays the saved timestamp with `>=` and streams one query in batches, avoiding gaps between rows with identical timestamps. See [Incremental source retrieval and timestamp boundaries](docs/incremental-source-retrieval.md) for the algorithm, duplicate handling, diagnostics, and limits.
+
 Create each Vault secret as either a plain password or JSON:
 
 ```json
 {"username":"archive_user","password":"replace-me"}
 ```
 
-Grant the VM dynamic group permission to read the Secret OCIDs, then use **Job configuration** to enter source/archive Vault Secret OCIDs and enable the job. See the [detailed log-archiving architecture](docs/log-archiving-detailed-architecture.md) for deployment, security, idempotency, and lifecycle details.
+Grant the VM dynamic group permission to read the control, source and archive Secret OCIDs, then use **Job configuration** to enter source/archive Vault Secret OCIDs and enable the job. See the [detailed log-archiving architecture](docs/log-archiving-detailed-architecture.md) for deployment, security, idempotency, and lifecycle details.
 
 ### Required OCI IAM policy
 
@@ -27,6 +35,7 @@ ALL {instance.id = '<compute-instance-ocid>'}
 Attach a least-privilege policy in the compartment that contains the Vault secrets. Prefer individual Secret OCIDs when source and archive credentials are known:
 
 ```text
+Allow dynamic-group <archiver-dynamic-group> to read secret-bundles in compartment <vault-compartment> where target.secret.id = '<control-secret-ocid>'
 Allow dynamic-group <archiver-dynamic-group> to read secret-bundles in compartment <vault-compartment> where target.secret.id = '<source-secret-ocid>'
 Allow dynamic-group <archiver-dynamic-group> to read secret-bundles in compartment <vault-compartment> where target.secret.id = '<archive-secret-ocid>'
 ```
@@ -44,11 +53,33 @@ cd /opt/error-log-archiver
 sudo ./setup.sh
 ```
 
-For updates, keep the checkout root-owned and run `cd /opt/error-log-archiver && sudo git pull --ff-only && sudo ./setup.sh`.
+For updates, setup stops the timer and web service before replacing dependencies and restarts them afterward. If an archive cycle is active, it stops the timer and asks you to rerun after that cycle finishes. Existing JSON data remains until explicitly imported through **Control DB** or the migration command. Keep the checkout root-owned and run `cd /opt/error-log-archiver && sudo git pull --ff-only && sudo ./setup.sh`.
 
 The console listens only on HTTPS port 443. Setup opens the host firewalld HTTPS service when available, but OCI ingress is separate: allow TCP 443 in the VM's NSG/security list. Setup generates a self-signed certificate under `/etc/error-log-archiver/tls/`; replace it with a trusted certificate for production use.
 
-After installation, browse to `https://<public-ip>/`, create/select a non-secret connection profile, set OCI Vault Secret OCIDs, configure the archive destination, then enable the job.
+After installation, browse to `https://<public-ip>/`, create/select a control connection profile, configure its control schema and worker Secret OCID, configure the archive destination, then define and enable jobs.
+
+## Archive control database
+
+The connection profile identifies the MySQL archive control server. Job settings, source/archive connections, table mappings, execution history and checkpoints live in its named control schema; only the bootstrap connection profile remains on Compute. A second Compute connects to the same schema to retrieve everything. See [Archive control database](docs/archive-control-database.md) for setup, migration, shared locking and cancellation override.
+
+### Initial setup, validation and JSON export
+
+**Control DB** is the first setup screen. Enter the control schema and the credential **Secret OCID** (`ocid1.vaultsecret.…`). **Test / validate Secret OCID** retrieves the secret, establishes a fresh MySQL connection and, for an initialized schema, tests read/write access using rolled-back probe operations. Testing does not save or activate the profile or create a schema. **Create or connect control schema** initializes missing tables, validates access and activates the worker bootstrap profile.
+
+Use **Export worker control profile JSON** to download a password-free `profiles.json` containing the active control profile, schema and credential Secret OCID. Install it on another Compute as `/var/lib/error-log-archiver/profiles.json`, owned by `errorlogarchiver` with mode `0600`. That worker retrieves all operational settings from the shared schema. **Export job settings JSON** downloads the policy and source/archive definitions as a portable configuration snapshot, without plaintext credentials; it is not a replacement for the worker bootstrap profile.
+
+Setup can bootstrap an already-defined local profile non-interactively:
+
+```bash
+sudo env ERROR_ARCHIVER_CONTROL_PROFILE=local3310 \
+  ERROR_ARCHIVER_CONTROL_SCHEMA=archive_control \
+  ERROR_ARCHIVER_CONTROL_USER='<control-worker-user>' \
+  ERROR_ARCHIVER_CONTROL_SECRET_OCID='<control-credential-secret-ocid>' \
+  ERROR_ARCHIVER_IMPORT_LEGACY=1 ./setup.sh
+```
+
+Set `ERROR_ARCHIVER_IMPORT_LEGACY=1` only for the first migration into an empty schema. Omit it on later updates and on a second Compute using that shared schema. The profile must already exist locally. Without these variables, use the control setup UI; workers without an active control profile remain disabled.
 
 ## Operations
 
@@ -56,7 +87,7 @@ After installation, browse to `https://<public-ip>/`, create/select a non-secret
 - **Job configuration** has Source Connection, Archive Connection, Source Tables, Archive Tables, and Mapping tabs. A source table maps to one archive table; mappings can be enabled or disabled. The Job Policy block controls enablement, interval, retention, batch size, and worker concurrency.
 - **Source types** provide Error Log, General Log, Slow Log, and Custom presets. Standard records are labelled `error_log`, `general_log`, or `slow_log`; custom records use their configured name without a `custom:` prefix.
 - **Archive** uses a three-tab view: **Summary** shows current scheduler status, metric blocks, execution history, and a labelled 24-hour chart; **Archived entries** provides paged, archive-table/source/partition-filtered records with export and reset-layout controls; **Partitions** provides lifecycle actions and partition downloads for the selected archive table.
-- POST forms use CSRF tokens. A host-level lock prevents a manual run from overlapping a scheduled worker execution.
+- POST forms use CSRF tokens. A shared MySQL lock prevents concurrent execution across Computes. The configuration screen provides a cancellation override.
 - The systemd timer wakes every minute; the worker applies the configured interval without a service restart.
 
 View worker activity with `journalctl -u error-log-archiver.service`.

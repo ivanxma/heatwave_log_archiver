@@ -47,7 +47,7 @@ This design has two operational benefits:
 
 The worker records execution status, timestamp, source cursor information, inserted-record count, and partition changes in durable job state. The dashboard presents the latest summary, execution history, and 24-hour archive activity chart.
 
-The timer and the web-triggered **Run archive now** operation share a non-blocking host lock. When another execution owns the lock, the attempted run is recorded as skipped rather than overlapping the active archive cycle.
+The timer and web-triggered **Run archive now** operation share a nonblocking MySQL connection lock across Computes using the same control server and schema. Busy runs do not overlap. An administrator can request cancellation between batches. See [Archive control database](archive-control-database.md) for shared storage, bootstrap and migration.
 
 ## Credential and security design
 
@@ -93,7 +93,7 @@ The primary key is `(event_time, source_fingerprint)`. The table is partitioned 
 
 ## Incremental ingestion and duplicate prevention
 
-Each configured source maintains its own timestamp cursor in durable job state. On a run, the worker reads source rows in ascending timestamp order, starting at the retention floor for a new source or after that source’s stored cursor for a resumed source. It loops across batches, so batch size bounds source reads rather than imposing a total execution limit.
+Each configured source maintains its own timestamp cursor in durable job state. On a run, the worker reads source rows in ascending timestamp order, starting at the retention floor for a new source or including that source’s stored cursor with `>=` for a resumed source. It consumes one unbuffered query result with `fetchmany(batch_size)` until exhausted, including all timestamp ties across batches. Batch size bounds client-side fetch groups rather than imposing a total execution limit.
 
 For every source row, the service creates a canonical JSON payload and derives a SHA-256 input from:
 
@@ -103,7 +103,7 @@ source identity | event timestamp | canonical source payload
 
 The worker uses `INSERT IGNORE` into the archive table. If a record is seen again because of a retry, manual run, timer overlap, or interrupted execution, the existing primary key causes MySQL to ignore it. This gives the process idempotent, at-least-once source reads with effectively-once archive storage semantics for the defined fingerprint.
 
-The timestamp cursor is recorded after source rows have been processed. Operators should ensure custom timestamp columns are suitable for monotonically progressing extraction. If a source produces more than one batch with identical timestamps, a source-specific immutable key should be included in a future cursor enhancement to guarantee no timestamp-tie gaps.
+The timestamp cursor is persisted after archive commit and successful cycle completion. A duplicate-only batch does not stop extraction. Records arriving with timestamps older than the saved cursor still require an overlap or another extraction strategy. See [Incremental source retrieval and timestamp boundaries](incremental-source-retrieval.md) for the query, duplicate diagnostics, retry behavior, and limitations.
 
 ## Partition lifecycle management
 

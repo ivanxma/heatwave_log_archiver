@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from modules.archive_service import run_archive_cycle
-from modules.config import ArchiveConfig, config_file
+from modules.config import ArchiveConfig
 from modules.job_state import record
 from modules.execution_lock import archive_execution_lock
+from modules import control_store
 
 
 def _interval(value: str) -> timedelta:
@@ -23,51 +23,52 @@ def _interval(value: str) -> timedelta:
 
 
 def _due(config: ArchiveConfig) -> bool:
-    state_path = config_file().parent / "worker-state.json"
-    try:
-        last = datetime.fromisoformat(json.loads(state_path.read_text())["last_success"])
+    state = control_store.load_state('worker')
+    if state.get('last_success'):
+        last = datetime.fromisoformat(state['last_success'])
         if datetime.now(timezone.utc) < last + _interval(config.schedule):
             return False
-    except FileNotFoundError:
-        pass
     return True
 
 
 def _mark_success() -> None:
-    state_path = config_file().parent / "worker-state.json"
-    state_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    state_path.write_text(json.dumps({"last_success": datetime.now(timezone.utc).isoformat()}) + "\n")
-    state_path.chmod(0o600)
+    control_store.update_state('worker', lambda state: {**state, 'last_success': datetime.now(timezone.utc).isoformat()})
 
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     try:
+        if not control_store.ready():
+            logging.info('Archive control database has not been configured; worker remains disabled')
+            return 0
         # A mapping owns its source/archive credentials, so avoid retrieving
         # unused legacy credentials when mappings are configured.
         config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
-        if not config.source_mappings:
-            config = ArchiveConfig.from_env()
         if not config.enabled:
             logging.info("archive job disabled")
             record("Disabled")
             return 0
-        if not _due(config):
-            logging.info("archive cycle not due; schedule=%s", config.schedule)
-            return 0
-        with archive_execution_lock(config_file().parent) as acquired:
+        with archive_execution_lock() as acquired:
             if not acquired:
                 logging.info("archive cycle skipped; another execution is active")
-                record("Skipped", detail="Another archive execution is active")
                 return 0
+            if not _due(config):
+                logging.info("archive cycle not due; schedule=%s", config.schedule)
+                return 0
+            if not config.source_mappings:
+                config = ArchiveConfig.from_env()
             result = run_archive_cycle(config)
-        _mark_success()
-        record("Succeeded", **result, schedule=config.schedule, log_type=config.log_type)
+            control_store.check_cancelled()
+            _mark_success()
+            record("Succeeded", **result, schedule=config.schedule, log_type=config.log_type)
         logging.info("archive cycle complete: %s", json.dumps(result, default=str))
         return 0
     except Exception as exc:
         logging.exception("archive cycle failed")
-        record("Failed", error=str(exc))
+        try:
+            record("Failed", error=str(exc))
+        except Exception:
+            logging.exception("Unable to record failure in archive control database")
         return 1
 
 

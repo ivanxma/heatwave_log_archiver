@@ -10,6 +10,7 @@ Group=errorlogarchiver
 WorkingDirectory=/opt/error-log-archiver
 EnvironmentFile=-/etc/error-log-archiver/runtime.env
 Environment=ERROR_ARCHIVER_CONFIG_FILE=/var/lib/error-log-archiver/settings.json
+Environment=ERROR_ARCHIVER_PROFILE_STORE=/var/lib/error-log-archiver/profiles.json
 ExecStart=/opt/error-log-archiver/.venv/bin/python /opt/error-log-archiver/archive_worker.py
 NoNewPrivileges=true
 PrivateTmp=true

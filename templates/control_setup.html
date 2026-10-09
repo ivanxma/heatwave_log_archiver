@@ -1,0 +1,12 @@
+{% extends 'base.html' %}{% block content %}
+<section><h1>Archive control database</h1><p>Your login connection profile identifies the MySQL server that stores shared job settings, source and archive connections, execution history, and checkpoints. Another Compute can use this same server and schema.</p>
+<form method="post" class="config">
+<label>Control schema *<input name="control_schema" value="{{ profile.get('control_schema', 'archive_control') }}" required></label>
+<label>Worker control user *<input name="control_user" value="{{ profile.get('user') or current_username }}" required></label>
+<label>Worker credential Secret OCID *<input name="control_secret_ocid" value="{{ profile.get('secret_ocid', '') }}" placeholder="ocid1.vaultsecret.…" required></label>
+<label class="checkbox-field"><input type="checkbox" name="import_existing" value="yes"><span>Import this Compute's existing configuration, history, and checkpoints into an empty control schema</span></label>
+<div class="form-actions"><button name="control_action" value="test">Test / validate Secret OCID</button><button name="control_action" value="save">Create or connect control schema</button></div></form>
+{% if profile.get('control_schema') and profile.get('secret_ocid') %}<p><a href="{{ url_for('control_profile_export') }}">Export worker control profile JSON</a> · <a href="{{ url_for('job_settings_export') }}">Export job settings JSON</a></p>{% endif %}
+<p>Only the control connection profile stays on Compute. Passwords remain in Vault and server memory. Connecting an existing schema loads its settings; importing never replaces an existing configuration.</p>
+</section>
+{% endblock %}

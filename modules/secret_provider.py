@@ -26,6 +26,8 @@ def vault_credential(secret_ocid: str, configured_user: str) -> tuple[str, str]:
     """
     if not secret_ocid:
         return configured_user, ""
+    if not secret_ocid.startswith("ocid1.vaultsecret."):
+        raise ValueError("OCI Vault credentials require a Secret OCID starting with ocid1.vaultsecret.; select the secret inside the vault, rather than the vault OCID.")
     cache_key = (secret_ocid, configured_user)
     try:
         cache_seconds = max(0, int(os.environ.get("ERROR_ARCHIVER_VAULT_CACHE_SECONDS", "300")))

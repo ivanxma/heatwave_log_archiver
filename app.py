@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from functools import wraps
 
-from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for, g
 
 from modules.archive_service import drop_partition, ensure_future_partitions, ensure_schema, fetch_archive_page, list_partitions, recent_rows, run_archive_cycle, selected_partitions_zip, truncate_partition
 from modules.config import ArchiveConfig, _settings, config_file, save_settings, source_type_for
@@ -19,6 +19,9 @@ from modules.mysql_util import test_mysql_connection
 from modules.profile_store import ensure_profile_store, get_profile_by_name, load_profiles, save_profile_from_form
 from modules.session_store import ServerSessionStore
 from modules.execution_lock import archive_execution_lock
+from modules import control_store
+from modules.profile_store import activate_control_profile
+from modules.secret_provider import clear_credential_cache
 
 app = Flask(__name__)
 app.config.update(
@@ -62,10 +65,24 @@ SOURCE_TABLE_PRESETS = {
     "general_log": ("mysql.general_log", "event_time"),
     "slow_log": ("mysql.slow_log", "start_time"),
 }
-# Navigation reuses a recent server-side health result. Login and database
-# operations still establish their own live connections when they are needed.
+# Page navigation checks only the local session. Login and database operations
+# establish live connections when needed; form actions periodically check health.
 SESSION_HEALTH_CHECK_SECONDS = max(1, int(os.environ.get("ERROR_ARCHIVER_SESSION_HEALTH_CHECK_SECONDS", "300")))
 ensure_profile_store(PROFILE_STORE_PATH)
+
+
+@app.before_request
+def bind_control_database():
+    record = SERVER_SESSIONS.get(session.get('connection_id'))
+    if record:
+        g.control_token = control_store.bind(record['profile'], str(record['username']), str(record['password']))
+
+
+@app.teardown_request
+def release_control_database(error=None):
+    token = g.pop('control_token', None)
+    if token is not None:
+        control_store.unbind(token)
 
 
 def login_required(view):
@@ -75,7 +92,9 @@ def login_required(view):
         if session.get("session_scope") != "error-log-archiver" or not record:
             session.clear()
             return redirect(url_for("login"))
-        if SERVER_SESSIONS.health_check_due(session.get("connection_id"), SESSION_HEALTH_CHECK_SECONDS):
+        if not record['profile'].get('control_schema') and request.endpoint not in {'control_setup', 'logout'}:
+            return redirect(url_for('control_setup'))
+        if request.method == "POST" and SERVER_SESSIONS.health_check_due(session.get("connection_id"), SESSION_HEALTH_CHECK_SECONDS):
             try:
                 test_mysql_connection(record["profile"], str(record["username"]), str(record["password"]))
                 SERVER_SESSIONS.mark_healthy(session.get("connection_id"))
@@ -102,10 +121,12 @@ def login():
         else:
             try:
                 test_mysql_connection(profile, username, password)
+                if profile.get('control_schema') and profile.get('secret_ocid') and profile.get('profile_management'):
+                    activate_control_profile(PROFILE_STORE_PATH, profile_name, profile)
                 session.clear()
                 session["session_scope"] = "error-log-archiver"
                 session["connection_id"] = SERVER_SESSIONS.create(profile_name, username, password, profile)
-                return redirect(url_for("initial_setup") if not _settings().get("configured") else url_for("dashboard"))
+                return redirect(url_for('dashboard') if profile.get('control_schema') else url_for('control_setup'))
             except Exception as exc:
                 flash(f"Could not authenticate with the selected MySQL profile: {exc}", "error")
     return render_template("login.html", profiles=load_profiles(PROFILE_STORE_PATH), selected_profile=request.args.get("profile", ""))
@@ -135,6 +156,66 @@ def profile_manager_required(view):
     return wrapped
 
 
+@app.route('/control-setup', methods=['GET', 'POST'])
+@profile_manager_required
+def control_setup():
+    record = SERVER_SESSIONS.get(session.get('connection_id'))
+    if request.method == 'POST':
+        profile = {**record['profile'], 'control_schema': request.form.get('control_schema', '').strip(), 'user': request.form.get('control_user', record['username']).strip(), 'secret_ocid': request.form.get('control_secret_ocid', '').strip()}
+        token = None
+        try:
+            from modules.mysql_util import ident
+            ident(profile['control_schema'])
+            if record['profile'].get('control_schema') and profile['control_schema'] != record['profile']['control_schema']:
+                raise ValueError('Use another control connection profile to switch schemas; this prevents interrupting an active worker.')
+            if not profile['secret_ocid'].startswith('ocid1.vaultsecret.'):
+                raise ValueError('Enter the control database credential Secret OCID for scheduled workers.')
+            if request.form.get('control_action') == 'test':
+                clear_credential_cache()
+                initialized = control_store.validate_credentials(profile)
+                flash('Secret validated: Vault retrieval, MySQL authentication and control schema read/write access passed.' if initialized else 'Secret validated: Vault retrieval and MySQL authentication passed. The control schema still needs initialization; permissions will be checked when you create it.', 'success')
+                return render_dashboard('control_setup.html', profile=profile, active_menu='control_setup')
+            control_store.validate_credentials(profile, create=True)
+            token = control_store.bind(profile, str(record['username']), str(record['password']))
+            if request.form.get('import_existing') == 'yes':
+                from modules.control_migration import import_existing
+                import_existing(config_file().parent)
+            activate_control_profile(PROFILE_STORE_PATH, record['profile_name'], profile)
+            record['profile'] = profile
+            if request.form.get('import_existing') == 'yes':
+                from modules.control_migration import retire_existing
+                retire_existing(config_file().parent)
+            flash('Archive control database is ready. Settings and job state are stored in this schema.', 'success')
+            return redirect(url_for('dashboard'))
+        except Exception as exc:
+            flash(f'Control database setup failed: {exc}', 'error')
+        finally:
+            if token is not None:
+                control_store.unbind(token)
+    return render_dashboard('control_setup.html', profile=record['profile'], active_menu='control_setup')
+
+
+@app.get('/control-profile.json')
+@profile_manager_required
+def control_profile_export():
+    import json
+    record = SERVER_SESSIONS.get(session.get('connection_id'))
+    profile = record['profile']
+    if not profile.get('control_schema') or not profile.get('secret_ocid'):
+        flash('Configure and validate the archive control connection before exporting it.', 'error')
+        return redirect(url_for('control_setup'))
+    payload = control_store.export_bootstrap(record['profile_name'], profile)
+    return Response(json.dumps(payload, indent=2) + '\n', mimetype='application/json', headers={'Content-Disposition': 'attachment; filename="profiles.json"', 'Cache-Control': 'no-store'})
+
+
+@app.get('/job-settings.json')
+@profile_manager_required
+def job_settings_export():
+    import json
+    settings = control_store.public_settings(_settings())
+    return Response(json.dumps(settings, indent=2) + '\n', mimetype='application/json', headers={'Content-Disposition': 'attachment; filename="job-settings.json"', 'Cache-Control': 'no-store'})
+
+
 @app.route("/initial-setup", methods=["GET", "POST"])
 @profile_manager_required
 def initial_setup():
@@ -144,16 +225,14 @@ def initial_setup():
     if request.method == "POST":
         if request.form.get("confirm_setup") != "yes":
             flash("Confirm archive setup before continuing.", "error")
-        elif not request.form.get("source_secret_ocid", "").strip() or not request.form.get("archive_secret_ocid", "").strip():
-            flash("Enter both OCI Vault Secret OCIDs. Passwords are retrieved by the VM at runtime and are not stored by this application.", "error")
+        elif not request.form.get("archive_secret_ocid", "").strip():
+            flash("Enter the archive credential Secret OCID.", "error")
         else:
             settings = _settings()
             archive_db = request.form.get("archive_db", "").strip()
             archive_table = request.form.get("archive_table", "").strip()
             settings.update({
-                "enabled": True,
-                "source_host": str(profile.get("host", "127.0.0.1")), "source_port": str(profile.get("port", 3306)),
-                "source_socket": str(profile.get("socket", "")), "source_user": str(record["username"]), "source_secret_ocid": request.form.get("source_secret_ocid", "").strip(),
+                "enabled": settings.get('enabled', False),
                 "archive_host": request.form.get("archive_host", str(profile.get("host", "127.0.0.1"))).strip(),
                 "archive_port": request.form.get("archive_port", str(profile.get("port", 3306))).strip(),
                 "archive_socket": request.form.get("archive_socket", str(profile.get("socket", ""))).strip(),
@@ -171,6 +250,7 @@ def initial_setup():
                 config = ArchiveConfig.from_env(resolve_source_secret=False)
                 ensure_schema(config)
                 settings["configured"] = True
+                register_archive_destination(settings)
                 save_settings(settings)
                 flash(f"Archive database {config.archive_db} and table {config.archive_table} are configured.", "success")
                 return redirect(url_for("dashboard"))
@@ -316,7 +396,7 @@ def configuration():
     selected_config_tab = request.args.get("config_tab", "source-connections")
     if selected_config_tab not in _ENTITY_FIELDS:
         selected_config_tab = "source-connections"
-    return render_dashboard("configuration.html", settings=settings, config=config, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), selected_config_tab=selected_config_tab, active_menu="configuration")
+    return render_dashboard("configuration.html", settings=settings, config=config, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), selected_config_tab=selected_config_tab, execution=control_store.load_state('execution'), active_menu="configuration")
 
 
 _ENTITY_FIELDS = {
@@ -436,6 +516,35 @@ def custom_source_delete(index: int):
     return redirect(url_for("configuration"))
 
 
+def register_archive_destination(settings):
+    """Expose a successfully prepared destination as reusable configuration records."""
+    connections = [dict(item) for item in settings.get("archive_connections", [])]
+    connection = {
+        "host": str(settings.get("archive_host", "127.0.0.1")),
+        "port": str(settings.get("archive_port", "3306")),
+        "user": str(settings.get("archive_user", "")),
+        "socket": str(settings.get("archive_socket", "")),
+        "secret_ocid": str(settings.get("archive_secret_ocid", "")),
+    }
+    existing = next((item for item in connections if all(str(item.get(key, "")) == value for key, value in connection.items())), None)
+    if existing is None:
+        names = {item.get("name") for item in connections}
+        name, number = "archive-default", 2
+        while name in names:
+            name, number = f"archive-default-{number}", number + 1
+        existing = {"name": name, **connection}
+        connections.append(existing)
+    tables = [dict(item) for item in settings.get("archive_tables", [])]
+    table = {"connection": existing["name"], "archive_db": str(settings.get("archive_db", "archivedb")), "archive_table": str(settings.get("archive_table", "performance_schema_error_log_archive"))}
+    if not any(all(item.get(key) == value for key, value in table.items()) for item in tables):
+        names = {item.get("name") for item in tables}
+        name, number = "archive-default-table", 2
+        while name in names:
+            name, number = f"archive-default-table-{number}", number + 1
+        tables.append({"name": name, **table})
+    settings.update(archive_connections=connections, archive_tables=tables)
+
+
 @app.route("/archive-setup", methods=["GET", "POST"])
 @profile_manager_required
 def archive_setup():
@@ -455,9 +564,10 @@ def archive_setup():
                 config = ArchiveConfig.from_env(resolve_source_secret=False)
                 ensure_schema(config)
                 settings["configured"] = True
+                register_archive_destination(settings)
                 save_settings(settings)
                 flash(f"Archive destination {config.archive_host}: {config.archive_db}.{config.archive_table} is ready.", "success")
-                return redirect(url_for("dashboard"))
+                return redirect(url_for("configuration", config_tab="archive-connections"))
             except Exception as exc:
                 save_settings(original)
                 flash(f"Archive destination setup failed: {exc}", "error")
@@ -471,12 +581,13 @@ def run_now():
         config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
         if not config.source_mappings:
             config = ArchiveConfig.from_env()
-        with archive_execution_lock(config_file().parent) as acquired:
+        with archive_execution_lock() as acquired:
             if not acquired:
                 flash("An archive execution is already in progress.", "error")
                 return redirect(url_for("dashboard"))
             result = run_archive_cycle(config)
-        record_job_state("Succeeded", **result, schedule=config.schedule, log_type=config.log_type, trigger="Web: run now")
+            control_store.check_cancelled()
+            record_job_state("Succeeded", **result, schedule=config.schedule, log_type=config.log_type, trigger="Web: run now")
         flash(f"Archive cycle completed: {result['copied']} row(s) copied; {len(result['partitions_dropped'])} partition(s) dropped.", "success")
     except Exception as exc:
         record_job_state("Failed", error=str(exc), trigger="Web: run now")
@@ -575,6 +686,17 @@ def render_dashboard(page_template: str, **context):
     shared = {**SERVER_SESSIONS.public_context(record), "can_manage_profiles": bool(record and record["profile"].get("profile_management")), "active_menu": "archive"}
     shared.update(context)
     return render_template(page_template, **shared)
+
+
+@app.post('/execution/override')
+@profile_manager_required
+def execution_override():
+    try:
+        control_store.request_cancel(request.form.get('execution_id', ''))
+        flash('Override requested. The worker will stop between batches and release its lock. Retry after it stops.', 'success')
+    except Exception as exc:
+        flash(f'Override failed: {exc}', 'error')
+    return redirect(url_for('configuration'))
 
 
 if __name__ == "__main__":
