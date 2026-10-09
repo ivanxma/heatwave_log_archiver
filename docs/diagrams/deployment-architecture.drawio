@@ -1,0 +1,163 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="Electron" agent="draw.io" version="29.0.3">
+  <diagram id="deployment" name="Deployment architecture">
+    <mxGraphModel dx="1800" dy="1240" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1240" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="&lt;b&gt;MySQL Log Archiver&lt;/b&gt; · Deployment architecture" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=32;spacing=14;align=left;verticalAlign=middle;fontColor=#0F172A;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="35" width="1680" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="OCI Compute / Oracle Linux 9 · HTTPS administration · scheduled, incremental MySQL archival" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=18;spacing=14;align=left;verticalAlign=middle;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="100" width="1680" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="compute" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=2;fillColor=#F4F7FC;strokeColor=#94A3B8;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="380" y="285" width="830" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="compute-title" value="&lt;b&gt;OCI COMPUTE&lt;/b&gt;  |  Oracle Linux 9" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=18;spacing=14;align=left;verticalAlign=middle;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="410" y="303" width="740" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="compute-subtitle" value="/opt/error-log-archiver · user: errorlogarchiver" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=14;spacing=14;align=left;verticalAlign=middle;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="410" y="337" width="740" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="database-boundary" value="" style="rounded=1;whiteSpace=wrap;html=1;arcSize=2;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1370" y="285" width="380" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="db-title" value="&lt;b&gt;MYSQL ENDPOINTS&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=18;spacing=14;align=left;verticalAlign=middle;fontColor=#334155;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="305" width="320" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="db-note" value="Logical roles; hosts are configurable" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=14;spacing=14;align=left;verticalAlign=middle;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="339" width="320" height="25" as="geometry" />
+        </mxCell>
+        <mxCell id="browser" value="&lt;b&gt;Operator browser&lt;/b&gt;&lt;br&gt;&lt;br&gt;Setup &amp;amp; job configuration&lt;br&gt;Archive reports / Log Explore&lt;br&gt;Opaque session cookie" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EFF6FF;strokeColor=#60A5FA;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=18;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="50" y="390" width="250" height="165" as="geometry" />
+        </mxCell>
+        <mxCell id="iam" value="&lt;b&gt;OCI IAM&lt;/b&gt;&lt;br&gt;VM dynamic group&lt;br&gt;Read only selected secret-bundles" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F5F3FF;strokeColor=#A78BFA;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="440" y="160" width="310" height="105" as="geometry" />
+        </mxCell>
+        <mxCell id="vault" value="&lt;b&gt;OCI Vault&lt;/b&gt;&lt;br&gt;Control, source &amp;amp; archive secrets&lt;br&gt;Instance principal authentication" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F5F3FF;strokeColor=#A78BFA;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="850" y="150" width="300" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="web" value="&lt;b&gt;HTTPS web console&lt;/b&gt;&lt;br&gt;Flask + Gunicorn · TLS :443&lt;br&gt;1 process / 8 request threads&lt;br&gt;&lt;br&gt;Control access: login session&lt;br&gt;Archive access: Vault credentials&lt;br&gt;CSRF-protected actions" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EFF6FF;strokeColor=#60A5FA;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="440" y="390" width="310" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="timer" value="&lt;b&gt;systemd timer&lt;/b&gt;&lt;br&gt;error-log-archiver.timer&lt;br&gt;&lt;br&gt;Boot: +2 min&lt;br&gt;Evaluate schedule every minute" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#94A3B8;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="440" y="635" width="310" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="worker" value="&lt;b&gt;Archive execution&lt;/b&gt;&lt;br&gt;archive_worker.py · oneshot service&lt;br&gt;&lt;br&gt;Read policy; check due time&lt;br&gt;Acquire shared MySQL lock&lt;br&gt;Stream timestamp-based batches&lt;br&gt;Commit archive, then checkpoint&lt;br&gt;Maintain monthly partitions" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#ECFDF5;strokeColor=#34D399;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="850" y="600" width="300" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="profile" value="&lt;b&gt;Local bootstrap&lt;/b&gt;&lt;br&gt;/var/lib/error-log-archiver/&lt;br&gt;profiles.json · mode 0600&lt;br&gt;&lt;br&gt;Control endpoint, schema &amp;amp;&lt;br&gt;Secret OCID; no DB passwords" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#FFFBEB;strokeColor=#FBBF24;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=16;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="440" y="855" width="310" height="155" as="geometry" />
+        </mxCell>
+        <mxCell id="journal" value="&lt;b&gt;Local service observability&lt;/b&gt;&lt;br&gt;systemd status + journal&lt;br&gt;&lt;br&gt;Worker / timer / web activity&lt;br&gt;Console reads on demand" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F1F5F9;strokeColor=#94A3B8;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=16;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="850" y="875" width="300" height="135" as="geometry" />
+        </mxCell>
+        <mxCell id="control" value="&lt;b&gt;Shared control MySQL&lt;/b&gt;&lt;br&gt;&lt;br&gt;Policy, mappings &amp;amp; Secret OCIDs&lt;br&gt;Schedule, history &amp;amp; checkpoints&lt;br&gt;GET_LOCK / cancellation state" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#EFF6FF;strokeColor=#60A5FA;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="390" width="320" height="165" as="geometry" />
+        </mxCell>
+        <mxCell id="source" value="&lt;b&gt;Source MySQL instance(s)&lt;/b&gt;&lt;br&gt;&lt;br&gt;performance_schema.error_log&lt;br&gt;mysql.slow_log / general_log&lt;br&gt;Custom tables or views&lt;br&gt;&lt;br&gt;Incremental timestamp reads" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#ECFDF5;strokeColor=#34D399;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="615" width="320" height="185" as="geometry" />
+        </mxCell>
+        <mxCell id="archive" value="&lt;b&gt;Archive MySQL&lt;/b&gt;&lt;br&gt;&lt;br&gt;JSON payload + source identity&lt;br&gt;Monthly event_time partitions&lt;br&gt;INSERT IGNORE deduplication&lt;br&gt;Partition creation &amp;amp; retention" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#ECFDF5;strokeColor=#34D399;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=17;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="1400" y="860" width="320" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="browser-web" value="HTTPS :443" edge="1" parent="1" source="browser" target="web" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#2563EB;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.45;entryX=0;entryY=0.39;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="iam-vault" value="Allow read" edge="1" parent="1" source="iam" target="vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#7C3AED;labelBackgroundColor=#FFFFFF;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="web-control" value="Configure / query state" edge="1" parent="1" source="web" target="control" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#2563EB;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.32;entryX=0;entryY=0.37;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="web-archive" value="Reports / exploration / setup" edge="1" parent="1" source="web" target="archive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#2563EB;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.7;entryX=0;entryY=0.8125;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1235" y="523" />
+              <mxPoint x="1235" y="990" />
+              <mxPoint x="1400" y="990" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="worker-control" value="Settings / lock / checkpoints" edge="1" parent="1" source="worker" target="control" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#059669;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#059669;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.19;entryX=0;entryY=0.82;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1310" y="640" />
+              <mxPoint x="1310" y="525" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="worker-source" value="SELECT batches" edge="1" parent="1" source="worker" target="source" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#059669;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#059669;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.51;entryX=0;entryY=0.495;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="worker-archive" value="Write rows + partition DDL" edge="1" parent="1" source="worker" target="archive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#059669;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#059669;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.833;entryX=0;entryY=0.22;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1280" y="775" />
+              <mxPoint x="1280" y="895" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="timer-worker" value="Invoke worker" edge="1" parent="1" source="timer" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#64748B;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="web-manual" value="Run archive now" edge="1" parent="1" source="web" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#64748B;labelBackgroundColor=#FFFFFF;dashed=1;exitX=1;exitY=0.87;entryX=0;entryY=0.12;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="800" y="555" />
+              <mxPoint x="800" y="625" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="web-vault" value="" edge="1" parent="1" source="web" target="vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#7C3AED;labelBackgroundColor=#FFFFFF;dashed=1;exitX=1;exitY=0.16;entryX=0;entryY=0.826;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="785" y="420" />
+              <mxPoint x="785" y="245" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="worker-vault" value="Runtime secrets · HTTPS :443" edge="1" parent="1" source="worker" target="vault" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#7C3AED;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#7C3AED;labelBackgroundColor=#FFFFFF;dashed=1;exitX=1;exitY=0.095;entryX=1;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="620" />
+              <mxPoint x="1180" y="207" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="profile-web" value="Bootstrap" edge="1" parent="1" source="profile" target="web" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#64748B;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0;exitY=0.29;entryX=0;entryY=0.84;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="410" y="900" />
+              <mxPoint x="410" y="550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="profile-worker" value="Active control profile" edge="1" parent="1" source="profile" target="worker" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#64748B;labelBackgroundColor=#FFFFFF;dashed=1;exitX=1;exitY=0.16;entryX=0;entryY=0.88;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="795" y="880" />
+              <mxPoint x="795" y="785" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="worker-journal" value="Log execution" edge="1" parent="1" source="worker" target="journal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#64748B;strokeWidth=2;endArrow=block;endFill=1;fontFamily=Helvetica;fontSize=14;fontColor=#64748B;labelBackgroundColor=#FFFFFF;dashed=1;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="network" value="&lt;b&gt;Network access&lt;/b&gt;&lt;br&gt;&lt;br&gt;OCI NSG / security list + host firewall:&lt;br&gt;Allow inbound TCP 443 for operators.&lt;br&gt;SSH TCP 22 from admin IP only.&lt;br&gt;&lt;br&gt;VM → MySQL: configured TCP port&lt;br&gt;(default 3306), or local Unix socket.&lt;br&gt;VM → OCI APIs: outbound HTTPS 443.&lt;br&gt;&lt;br&gt;TLS certificate:&lt;br&gt;/etc/error-log-archiver/tls/" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=#F8FAFC;strokeColor=#CBD5E1;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=15;spacing=14;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="50" y="620" width="250" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="&lt;b&gt;CONNECTIONS&lt;/b&gt;   &lt;font color=&quot;#2563EB&quot;&gt;Blue: web operations&lt;/font&gt;   ·   &lt;font color=&quot;#059669&quot;&gt;Green: scheduled archival&lt;/font&gt;   ·   &lt;font color=&quot;#7C3AED&quot;&gt;Purple dashed: secrets / IAM&lt;/font&gt;   ·   &lt;font color=&quot;#64748B&quot;&gt;Gray: local invocation / bootstrap / logs&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=16;spacing=14;align=left;verticalAlign=middle;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1100" width="1700" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="notes" value="&lt;b&gt;Deployment notes&lt;/b&gt;  Control, source and archive roles may share a MySQL host. Another Compute can use the same control server/schema; GET_LOCK serializes executions.&lt;br&gt;The console can validate source connections using Vault. Stored credentials stay in process memory. The timer evaluates the saved business interval; it does not archive on every tick." style="rounded=1;whiteSpace=wrap;html=1;arcSize=10;fillColor=none;strokeColor=none;strokeWidth=1.5;fontColor=#172B4D;fontFamily=Helvetica;fontSize=15;spacing=14;align=left;verticalAlign=middle;fontColor=#475569;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="50" y="1150" width="1700" height="55" as="geometry" />
+        </mxCell>
+        <mxCell id="web-vault-label" value="Vault lookup" vertex="1" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontFamily=Helvetica;fontSize=14;fontColor=#7C3AED;">
+          <mxGeometry x="790" y="355" width="140" height="25" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

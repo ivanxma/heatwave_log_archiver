@@ -16,21 +16,17 @@ An operator can also add multiple custom tables or views with a configured times
 
 ## Deployment topology
 
-```text
-Browser ── HTTPS :443 ──► MySQL Log Archiver web service
-                              │
-                              ├──► Shared MySQL control schema (settings/state)
-                              └──► Archive MySQL (reports/exploration)
+The deployment diagram shows the OCI Compute services, OCI Vault/IAM, MySQL roles, and network connections. Blue connections represent web operations, green connections represent scheduled archival, purple dashed connections represent secret retrieval and IAM authorization, and gray connections represent local invocation, bootstrap, and logging.
 
-Local profiles.json ──► Archive worker ◄── systemd timer
-                              │
-                              ├──► OCI Vault (control/source/archive credentials)
-                              ├──► Shared MySQL control schema (schedule/checkpoints/lock)
-                              ├──► Source MySQL table(s)
-                              └──► Archive MySQL (records/monthly partitions)
-```
+![MySQL Log Archiver deployment architecture](diagrams/deployment-architecture.png)
+
+Open the [editable draw.io diagram](diagrams/deployment-architecture.drawio) in draw.io Desktop or diagrams.net to update it. After editing, export its PNG preview to `diagrams/deployment-architecture.png` so this document displays the current architecture.
 
 The web service runs on HTTPS port 443 as a non-root service user. The systemd unit grants only `CAP_NET_BIND_SERVICE` for the privileged listener port. The archive worker is a separate, one-shot systemd service invoked by a persistent timer.
+
+The local `profiles.json` bootstraps the control connection using its endpoint, schema, and credential Secret OCID. The shared control schema stores job policy, mappings, schedule state, execution history, checkpoints, and cancellation state. Source and archive endpoints are independently configurable; the three MySQL roles can share a host. Additional Compute instances can use the same control server and schema, with a shared MySQL `GET_LOCK` preventing overlapping executions.
+
+Allow inbound TCP 443 through the OCI NSG/security list and host firewall for console access, and restrict SSH TCP 22 to the administration IP. The VM needs outbound HTTPS 443 for OCI APIs and connectivity to each configured MySQL TCP port (default 3306); local MySQL connections can use a Unix socket. The installer places the console TLS certificate and key under `/etc/error-log-archiver/tls/`.
 
 ## Scheduling and execution
 
