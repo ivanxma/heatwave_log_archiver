@@ -8,3 +8,4 @@ instance/
 profiles.json
 tls/
 legacy-control-backup.tar.gz
+outputs/
