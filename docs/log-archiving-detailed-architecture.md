@@ -16,9 +16,9 @@ An operator can also add multiple custom tables or views with a configured times
 
 ## Deployment topology
 
-The OCI deployment diagram below uses Oracle's official service icons to show the Compute VM, IAM, Vault, operator, NSG, and MySQL roles alongside the application components running on the VM.
+The OCI deployment diagram below shows the Compute VM, IAM, Vault, operator, NSG, and MySQL roles alongside the application components running on the VM.
 
-[![MySQL Log Archiver OCI deployment architecture using the official Oracle icon library](diagrams/deployment-architecture.png)](diagrams/deployment-architecture.png)
+[![MySQL Log Archiver OCI deployment architecture](diagrams/deployment-architecture.png)](diagrams/deployment-architecture.png)
 
 *Figure 1. OCI deployment architecture. Select the diagram to view the full-size PNG.*
 
@@ -29,9 +29,7 @@ The OCI deployment diagram below uses Oracle's official service icons to show th
 | Purple dashed: secrets and authorization | OCI IAM authorizes the VM dynamic group to read selected Vault secret bundles. Application processes retrieve credentials using the VM instance principal over HTTPS. |
 | Gray: local invocation, bootstrap, and logging | The systemd timer invokes the worker, the console supports manual execution, local profiles bootstrap the control connection, and execution logs go to the systemd journal. |
 
-Open the [editable draw.io diagram](diagrams/deployment-architecture.drawio) in draw.io Desktop or diagrams.net to update it. After editing, export its PNG preview to `diagrams/deployment-architecture.png` so this document displays the current architecture.
-
-The diagram uses official Compute VM, MySQL, IAM, Vault, user, and NSG shapes from [Oracle's OCI Architecture Diagram Toolkit](https://docs.oracle.com/en-us/iaas/Content/General/Reference/graphicsfordiagrams.htm) (v24.2). The editable vector shapes are embedded in the diagram. To reuse them, choose **File → Open Library from → Device** in draw.io and select the companion [OCI deployment library](diagrams/oci-deployment-library.xml). MySQL icons represent configurable database roles; the diagram does not require Oracle-managed MySQL endpoints. The web console, scheduler, worker, bootstrap file, and systemd journal are local application components on the VM.
+The MySQL endpoints represent configurable database roles and can run locally or remotely. The web console, scheduler, worker, bootstrap file, and systemd journal are local application components on the VM.
 
 The web service runs on HTTPS port 443 as a non-root service user. The systemd unit grants only `CAP_NET_BIND_SERVICE` for the privileged listener port. The archive worker is a separate, one-shot systemd service invoked by a persistent timer.
 
