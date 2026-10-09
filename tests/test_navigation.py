@@ -187,6 +187,27 @@ class NavigationTests(unittest.TestCase):
             self.assertIn(b'empty control schema', response.data)
         self.assertEqual(self.settings, before)
 
+    def test_missing_control_schema_redirects_existing_session_to_setup(self):
+        with patch('modules.control_store.load_settings', side_effect=app.control_store.ControlSchemaNotInitialized('Missing schema')):
+            response = self.client.get('/')
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(response.location.endswith('/control-setup'))
+        self.assertEqual(self.client.get('/control-setup').status_code, 200)
+
+    def test_new_profile_login_checks_initialization_before_worker_activation(self):
+        profile = {'host': 'mysql', 'control_schema': 'archive_control', 'secret_ocid': 'ocid1.vaultsecret.control', 'profile_management': True}
+        with patch('app.load_profiles', return_value={'new': profile}), patch('app.test_mysql_connection'), patch('modules.control_store.is_initialized', return_value=False), patch('app.activate_control_profile') as activate, app.app.test_client() as client:
+            with client.session_transaction() as session:
+                session['csrf_token'] = 'test-csrf'
+            response = client.post('/login', data={'profile_name': 'new', 'username': 'admin', 'password': 'login-password', 'csrf_token': 'test-csrf'})
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(response.location.endswith('/control-setup'))
+            self.assertIn(b'not initialized', client.get('/control-setup').data)
+            activate.assert_not_called()
+            with client.session_transaction() as session:
+                app.SERVER_SESSIONS.delete(session.get('connection_id'))
+
+
 
 if __name__ == "__main__":
     unittest.main()

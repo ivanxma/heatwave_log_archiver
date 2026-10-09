@@ -6,6 +6,8 @@ import json
 import os
 import uuid
 from contextlib import contextmanager
+from functools import wraps
+from mysql.connector import Error as MySQLError
 from contextvars import ContextVar
 from pathlib import Path
 
@@ -15,6 +17,38 @@ from .secret_provider import vault_credential
 _TARGET = ContextVar('archive_control_target', default=None)
 _EXECUTION = ContextVar('archive_execution_id', default=None)
 ENTITY_KEYS = ('source_connections', 'archive_connections', 'source_tables', 'archive_tables', 'source_mappings', 'custom_sources')
+
+
+class ControlSchemaNotInitialized(RuntimeError):
+    """The configured control schema is missing its required tables/state row."""
+
+
+def control_read(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        try:
+            return view(*args, **kwargs)
+        except MySQLError as exc:
+            if exc.errno in (1049, 1146):
+                raise ControlSchemaNotInitialized('Initialize the archive control schema first.') from exc
+            raise
+    return wrapped
+
+
+def is_initialized():
+    if not ready():
+        return False
+    profile, _, _ = target()
+    with connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute('SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=%s AND TABLE_NAME IN (%s,%s,%s)', (profile['control_schema'], 'control_settings', 'control_entities', 'control_state'))
+            if cur.fetchone()[0] != 3:
+                return False
+            cur.execute(f"SELECT id FROM {table('control_settings')} WHERE id=1")
+            return cur.fetchone() is not None
+        finally:
+            cur.close()
 
 
 def profile_path():
@@ -94,6 +128,7 @@ def decode(value):
     return json.loads(value) if isinstance(value, (str, bytes)) else value
 
 
+@control_read
 def load_settings():
     if not ready():
         return {}
@@ -103,7 +138,7 @@ def load_settings():
             cur.execute(f"SELECT payload FROM {table('control_settings')} WHERE id=1")
             row = cur.fetchone()
             if not row:
-                raise RuntimeError('Initialize the archive control schema first.')
+                raise ControlSchemaNotInitialized('Initialize the archive control schema first.')
             settings = decode(row[0])
             cur.execute(f"SELECT kind, payload FROM {table('control_entities')} ORDER BY kind, position")
             for kind, payload in cur.fetchall():
@@ -145,6 +180,7 @@ def save_settings(settings, *, require_empty=False):
             cur.close()
 
 
+@control_read
 def load_state(name='job'):
     if not ready():
         return {}

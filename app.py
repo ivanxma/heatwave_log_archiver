@@ -85,6 +85,18 @@ def release_control_database(error=None):
         control_store.unbind(token)
 
 
+@app.errorhandler(control_store.ControlSchemaNotInitialized)
+def control_schema_missing(error):
+    record = SERVER_SESSIONS.get(session.get('connection_id'))
+    if record and record['profile'].get('profile_management'):
+        flash('The control schema is not initialized. Create or connect the control schema before opening jobs.', 'warning')
+        return redirect(url_for('control_setup'))
+    SERVER_SESSIONS.delete(session.get('connection_id'))
+    session.clear()
+    flash('The control schema is not initialized. Ask a control administrator to complete setup.', 'error')
+    return redirect(url_for('login'))
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
@@ -121,12 +133,22 @@ def login():
         else:
             try:
                 test_mysql_connection(profile, username, password)
-                if profile.get('control_schema') and profile.get('secret_ocid') and profile.get('profile_management'):
+                token = control_store.bind(profile, username, password)
+                try:
+                    initialized = control_store.is_initialized()
+                finally:
+                    control_store.unbind(token)
+                if not initialized and not profile.get('profile_management'):
+                    flash('The control schema is not initialized. Ask a control administrator to complete setup.', 'error')
+                    return redirect(url_for('login'))
+                if initialized and profile.get('secret_ocid') and profile.get('profile_management'):
                     activate_control_profile(PROFILE_STORE_PATH, profile_name, profile)
                 session.clear()
                 session["session_scope"] = "error-log-archiver"
                 session["connection_id"] = SERVER_SESSIONS.create(profile_name, username, password, profile)
-                return redirect(url_for('dashboard') if profile.get('control_schema') else url_for('control_setup'))
+                if not initialized and profile.get('control_schema'):
+                    flash('The control schema is not initialized. Create or connect the control schema before opening jobs.', 'warning')
+                return redirect(url_for('dashboard') if initialized else url_for('control_setup'))
             except Exception as exc:
                 flash(f"Could not authenticate with the selected MySQL profile: {exc}", "error")
     return render_template("login.html", profiles=load_profiles(PROFILE_STORE_PATH), selected_profile=request.args.get("profile", ""))

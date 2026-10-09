@@ -100,6 +100,25 @@ class ControlStoreTests(unittest.TestCase):
         self.assertEqual([p.name for p in directory.glob('*.json')], ['profiles.json'])
         self.assertEqual((directory / 'legacy-control-backup.tar.gz').stat().st_mode & 0o777, 0o600)
 
+    def test_missing_schema_error_is_classified_and_connection_error_is_preserved(self):
+        from contextlib import contextmanager
+        from mysql.connector import ProgrammingError, OperationalError
+        @contextmanager
+        def missing():
+            raise ProgrammingError('Unknown database', errno=1049)
+            yield
+        with patch('modules.control_store.connection', side_effect=missing):
+            with self.assertRaises(control_store.ControlSchemaNotInitialized):
+                control_store.load_settings()
+        @contextmanager
+        def unavailable():
+            raise OperationalError('Unavailable', errno=2003)
+            yield
+        with patch('modules.control_store.connection', side_effect=unavailable):
+            with self.assertRaises(OperationalError):
+                control_store.load_settings()
+
+
 
 if __name__ == '__main__':
     unittest.main()
