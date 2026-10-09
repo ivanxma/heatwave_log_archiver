@@ -83,6 +83,14 @@ sudo env ERROR_ARCHIVER_CONTROL_PROFILE=local3310 \
 
 Set `ERROR_ARCHIVER_IMPORT_LEGACY=1` only for the first migration into an empty schema. Omit it on later updates and on a second Compute using that shared schema. The profile must already exist locally. Without these variables, use the control setup UI; workers without an active control profile remain disabled.
 
+## Technical operation guide
+
+See [MySQL Log Archiver: technical operations](docs/log-archiver-operations.md) for the worker flow, archive envelope, monthly partition creation and retention, incremental selection/checkpoints, control database contents, JSON export/import recovery, and implemented protections with their limits.
+
+Partitions use `RANGE COLUMNS(event_time)` with names such as `p202610` and an exclusive next-month boundary. Every archive run prepares the retention window plus two future months before ingestion, then prunes expired monthly partitions after ingestion. With 12-month retention in October 2026, the cutoff is October 1, 2025. MySQL does not create these partitions by itself; an enabled archive run or explicit preparation action performs maintenance.
+
+Save settings before exporting: the export downloads the saved control database configuration and does not write unsaved values. Import into a fresh control schema restores configuration only, including its enabled state; it does not restore history, checkpoints or archive rows. Use the worker-profile export when adding a Compute to an existing shared control schema.
+
 ## Operations
 
 - **Archive DB setup** configures a local or remote archive MySQL destination and creates the schema/table/partitions after confirmation.

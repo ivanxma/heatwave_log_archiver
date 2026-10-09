@@ -2,7 +2,7 @@
 
 ## Purpose and scope
 
-HeatWave Log Archiver is a Linux 9 service and HTTPS console that copies selected MySQL log sources into a separately configurable archive MySQL database. It is intended for demonstration and tutorial use; production operators must validate availability, capacity, IAM, encryption, monitoring, backup, and retention requirements for their environment.
+MySQL Log Archiver is a Linux 9 service and HTTPS console that copies selected MySQL log sources into a separately configurable archive MySQL database. It is intended for demonstration and tutorial use; production operators must validate availability, capacity, IAM, encryption, monitoring, backup, and retention requirements for their environment.
 
 The service supports these built-in sources:
 
@@ -17,21 +17,17 @@ An operator can also add multiple custom tables or views with a configured times
 ## Deployment topology
 
 ```text
-Browser
-  │ HTTPS :443
-  ▼
-Error Log Archiver web service ──────► /var/lib/error-log-archiver
-  │                                            non-secret settings
-  │ manages schedule, sources, lifecycle        job state/history
-  │
-  ├── OCI instance principal ───────► OCI Vault secret bundles
-  │                                      source/archive credentials
-  │
-systemd timer ─► archive worker ─────► Source MySQL host(s)
- every minute        when due              selected log tables/views
-                         │
-                         └────────────────► Archive MySQL host
-                                               partitioned archive table
+Browser ── HTTPS :443 ──► MySQL Log Archiver web service
+                              │
+                              ├──► Shared MySQL control schema (settings/state)
+                              └──► Archive MySQL (reports/exploration)
+
+Local profiles.json ──► Archive worker ◄── systemd timer
+                              │
+                              ├──► OCI Vault (control/source/archive credentials)
+                              ├──► Shared MySQL control schema (schedule/checkpoints/lock)
+                              ├──► Source MySQL table(s)
+                              └──► Archive MySQL (records/monthly partitions)
 ```
 
 The web service runs on HTTPS port 443 as a non-root service user. The systemd unit grants only `CAP_NET_BIND_SERVICE` for the privileged listener port. The archive worker is a separate, one-shot systemd service invoked by a persistent timer.
@@ -43,7 +39,7 @@ The systemd timer wakes every minute. It does not dictate the business interval 
 This design has two operational benefits:
 
 1. Changing the interval in the console applies on the next timer evaluation without rewriting/reloading a systemd timer unit.
-2. `Persistent=true` allows systemd to evaluate missed timer activity after a host restart.
+2. The boot trigger resumes evaluation after a restart; the saved due time lives in the control database. Missed intervals are not replayed as individual executions.
 
 The worker records execution status, timestamp, source cursor information, inserted-record count, and partition changes in durable job state. The dashboard presents the latest summary, execution history, and 24-hour archive activity chart.
 
@@ -101,7 +97,7 @@ For every source row, the service creates a canonical JSON payload and derives a
 source identity | event timestamp | canonical source payload
 ```
 
-The worker uses `INSERT IGNORE` into the archive table. If a record is seen again because of a retry, manual run, timer overlap, or interrupted execution, the existing primary key causes MySQL to ignore it. This gives the process idempotent, at-least-once source reads with effectively-once archive storage semantics for the defined fingerprint.
+The worker uses `INSERT IGNORE` into the archive table. If a record is seen again because of a retry, manual run, timer overlap, or interrupted execution, the existing primary key causes MySQL to ignore it. Replays are idempotent for that fingerprint. Source availability and timestamp ordering still determine which records are eligible; this is not a guarantee of complete source capture.
 
 The timestamp cursor is persisted after archive commit and successful cycle completion. A duplicate-only batch does not stop extraction. Records arriving with timestamps older than the saved cursor still require an overlap or another extraction strategy. See [Incremental source retrieval and timestamp boundaries](incremental-source-retrieval.md) for the query, duplicate diagnostics, retry behavior, and limitations.
 
@@ -110,7 +106,7 @@ The timestamp cursor is persisted after archive commit and successful cycle comp
 Partition management is deliberately exposed as a business workflow:
 
 1. At setup, the service creates the archive database/table after explicit confirmation.
-2. The worker ensures partitions for the retention window and a configurable future runway.
+2. The worker ensures partitions for the retention window and two future months by default.
 3. **Prepare future partitions** adds a user-selected number of empty upcoming monthly partitions.
 4. Retention removes fully expired monthly partitions with `ALTER TABLE ... DROP PARTITION`, avoiding row-by-row deletes.
 5. The console can filter a partition, export selected partitions as a ZIP containing CSV files, empty selected partitions, or permanently delete selected partitions.
@@ -124,6 +120,8 @@ Emptying a partition retains its boundary for new records. Dropping it removes b
 | Archive | Status summary, 24-hour activity, immediate execution, paged/filterable archive entries, partition lifecycle operations |
 | Job configuration | Job Policy plus Source Connection, Archive Connection, Source Tables, Archive Tables, and Mapping tabs; references are validated and names are unique per record type |
 | Archive DB setup | Configure a local or remote archive database and confirm schema/partition creation |
+| Control DB | Initialize/validate the shared control schema and worker bootstrap; export the control profile |
+| Log Explore | Expand archived JSON into sortable columns, search/page/export records and chart counts by time |
 | Connection profiles | Create/select non-secret MySQL connection defaults for interactive administration |
 
 Archive entries can be narrowed by archive table, archive source, and monthly partition. The report table supports filter, page sizing, CSV download, layout reset, column sorting, resizing, reordering, and full payload viewing. Archive lookup failures are displayed in the applicable Entries or Partitions tab.
@@ -146,3 +144,5 @@ Recommended lifecycle runbook:
 4. Export partitions required for long-term retention.
 5. Empty or drop partitions only after the retention/export approval process.
 6. Rotate Vault secrets through OCI Vault; the next worker execution retrieves the current secret value without application configuration changes.
+
+For the current operational runbook, partition boundaries, configuration export/import and protection limits, see [technical operations](log-archiver-operations.md).
