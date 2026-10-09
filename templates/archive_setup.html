@@ -2,11 +2,9 @@
 {% block content %}
 <section>
   <h1>Set up archive database</h1>
-  {% if settings.get('configured') %}
-  <p class="archive-saved-status">Archive setup is saved.</p>
-  {% endif %}
   <p>Review or update the archive destination below. Credentials are fetched from OCI Vault when you confirm setup.</p>
-  <form method="post" class="config">
+  <form method="post" class="config" id="archive-setup-form">
+    <p id="archive-unsaved" class="flash warning" role="status" hidden>You have unsaved changes. Confirm archive DB setup to save them.</p>
     <fieldset>
       <label>Archive host<input name="archive_host" value="{{ settings.get('archive_host', config.archive_host) }}"></label>
       <label>Port<input name="archive_port" value="{{ settings.get('archive_port', config.archive_port) }}"></label>
@@ -20,4 +18,15 @@
     <button>Confirm archive DB setup</button>
   </form>
 </section>
+<script>
+(() => {
+  const form = document.getElementById('archive-setup-form');
+  const fields = [...form.querySelectorAll('fieldset input')];
+  const saved = fields.map(input => input.value);
+  const notice = document.getElementById('archive-unsaved');
+  const update = () => { notice.hidden = !fields.some((input, index) => input.value !== saved[index]); };
+  form.addEventListener('input', update);
+  form.addEventListener('change', update);
+})();
+</script>
 {% endblock %}

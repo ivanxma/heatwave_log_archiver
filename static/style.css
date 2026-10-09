@@ -6,4 +6,5 @@
 
 .explore-page-controls{justify-content:flex-start}.explore-page-number{width:5rem}.explore-page-controls button:disabled{background:#cbd5e1;color:#64748b;cursor:default}
 
-.archive-saved-status{display:inline-block;margin:0 0 .5rem;padding:.35rem .65rem;background:#dcfce7;color:#166534;border-radius:.4rem;font-size:.9rem;font-weight:650}
+
+#archive-unsaved{background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:.4rem;margin:0}

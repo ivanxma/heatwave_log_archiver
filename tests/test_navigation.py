@@ -85,7 +85,7 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(settings["archive_tables"][0]["connection"], settings["archive_connections"][0]["name"])
         with patch("modules.config.vault_credential", side_effect=AssertionError("Unexpected Vault call")):
             response = self.client.get("/archive-setup")
-            self.assertIn(b"Archive setup is saved", response.data)
+            self.assertNotIn(b"Archive setup is saved", response.data)
             self.assertIn(b'name="archive_host" value="archive.example"', response.data)
             self.assertIn(b'name="archive_port" value="3306"', response.data)
             self.assertIn(b'name="archive_db" value="archivedb"', response.data)
