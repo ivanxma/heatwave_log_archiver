@@ -38,10 +38,12 @@ class DestinationCursor:
         self.rowcount = 0
         self.fail_after = None
         self.writes = 0
+        self.identities = []
 
     def execute(self, sql, parameters):
         assert sql.startswith('INSERT IGNORE')
         self.writes += 1
+        self.identities.append(parameters[4:])
         if self.fail_after is not None and self.writes > self.fail_after:
             raise RuntimeError('Insert failed')
         identity = (parameters[0], parameters[3])
@@ -69,7 +71,7 @@ class IncrementalArchiveTests(unittest.TestCase):
         def connection(value):
             yield value
 
-        with patch('modules.archive_service.ensure_schema'), patch('modules.archive_service.load_state', return_value=state or {}), patch('modules.archive_service.source_connection', return_value=connection(source)), patch('modules.archive_service.archive_connection', return_value=connection(archive)):
+        with patch('modules.archive_service.read_source_identity', return_value=('11111111-1111-1111-1111-111111111111', 'source-host')), patch('modules.archive_service.ensure_schema'), patch('modules.archive_service.load_state', return_value=state or {}), patch('modules.archive_service.source_connection', return_value=connection(source)), patch('modules.archive_service.archive_connection', return_value=connection(archive)):
             try:
                 result = archive_error_log(self.config)
             except Exception:

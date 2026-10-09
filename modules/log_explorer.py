@@ -11,6 +11,7 @@ from flask import Blueprint, Response, flash, request, url_for
 from . import control_store
 from .mysql_util import _cached_connection, ident
 from .secret_provider import vault_credential
+from .explorer_filters import OPERATORS, parse_rules, compile_filters
 
 
 def flatten(row, json_columns):
@@ -23,7 +24,7 @@ def flatten(row, json_columns):
             for index, child in enumerate(value):
                 visit(path + (index,), child)
         else:
-            result[path] = json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value
+            result[path] = value.hex() if isinstance(value, bytes) else (json.dumps(value, ensure_ascii=False) if isinstance(value, (dict, list)) else value)
     for key, value in row.items():
         if key in json_columns and isinstance(value, (str, bytes)):
             try:
@@ -58,18 +59,10 @@ def sort_expression(encoded, columns):
     return f'JSON_EXTRACT({root}, %s)', ('$' + suffix,)
 
 
-def search_clause(query, columns):
-    if not query:
-        return '', ()
-    # Literal substring search: wildcard characters entered by users stay literal.
-    term = '%' + query.replace('!', '!!').replace('%', '!%').replace('_', '!_') + '%'
-    return ' WHERE (' + ' OR '.join(f"CAST({ident(column)} AS CHAR) LIKE %s ESCAPE '!'" for column in columns) + ')', (term,) * len(columns)
-
-
 @contextmanager
 def connect(connection):
     user, password = vault_credential(connection.get('secret_ocid', ''), connection.get('user', ''))
-    with _cached_connection(connection.get('host', ''), int(connection.get('port', 3306)), user, password, connection.get('socket', '')) as db:
+    with _cached_connection(connection.get('host', ''), int(connection.get('port', 3306)), user, password, connection.get('socket', ''), role='explorer') as db:
         yield db
 
 
@@ -114,7 +107,9 @@ def register(app, login_required, render_dashboard):
         selected_connection = request.args.get('connection', '')
         selected_table = request.args.get('table', '')
         tables = [table for table in settings.get('archive_tables', []) if table.get('connection') == selected_connection]
-        query = request.args.get('q', '')[:500]
+        rule_mode = request.args.get('rule_mode', 'all')
+        rules, field_options = [], [('__source_connection__', 'Source connection (multi-select)')]
+        source_profiles = [{key: item.get(key, '') for key in ('name', 'host', 'port', 'user', 'socket', 'server_uuid', 'server_uuids', 'server_hostname', 'server_hostnames')} for item in settings.get('source_connections', [])]
         view = 'chart' if request.args.get('view') == 'chart' else 'table'
         interval = request.args.get('interval', 'day')
         start = request.args.get('start', (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat())
@@ -127,16 +122,19 @@ def register(app, login_required, render_dashboard):
         except ValueError:
             page, size = 1, 50
         rows, headers, buckets = [], [], []
+        columns = {}
         more = False
         sort = request.args.get('sort', '')
         direction = 'asc' if request.args.get('direction') == 'asc' else 'desc'
         def link(**changes):
-            args = dict(request.args)
+            args = request.args.to_dict(flat=False)
             args.pop('download', None)
-            args.update(connection=selected_connection, table=selected_table, q=query, size=size, view=view)
+            args.pop('q', None)
+            args.update(connection=selected_connection, table=selected_table, size=size, view=view)
             args.update(changes)
             return url_for('log_explore.explore', **args)
         try:
+            rules = parse_rules(request.args)
             if selected_table:
                 connection = next((item for item in connections if item['name'] == selected_connection), None)
                 table = next((item for item in tables if item['name'] == selected_table), None)
@@ -148,7 +146,21 @@ def register(app, login_required, render_dashboard):
                     try:
                         cursor.execute(f'SHOW COLUMNS FROM {target}')
                         columns = {item['Field']: item['Type'].lower() for item in cursor.fetchall()}
-                        where, params = search_clause(query, columns)
+                        json_columns = {key for key, typ in columns.items() if typ == 'json' or key == 'payload'}
+                        fields = dict.fromkeys((name,) for name in columns)
+                        if json_columns:
+                            sampled = ', '.join(ident(name) for name in json_columns)
+                            time_order = ' ORDER BY `event_time` DESC' if 'event_time' in columns else ''
+                            cursor.execute(f'SELECT {sampled} FROM {target}{time_order} LIMIT 100')
+                            for sample in cursor.fetchall():
+                                fields.update(dict.fromkeys(flatten(sample, json_columns)))
+                        for rule in rules:
+                            if rule['field'] == '__source_connection__':
+                                continue
+                            sort_expression(rule['field'], columns)
+                            fields[tuple(json.loads(rule['field']))] = None
+                        field_options = [('__source_connection__', 'Source connection (multi-select)'), *[(json.dumps(path, ensure_ascii=False), column_label(path)) for path in fields]]
+                        where, params = compile_filters(rules, rule_mode, [], columns, source_profiles)
                         if view == 'chart':
                             if 'event_time' not in columns:
                                 raise ValueError('Chart view requires an event_time column.')
@@ -163,7 +175,8 @@ def register(app, login_required, render_dashboard):
                             buckets = fill_buckets(buckets, first, last, interval)
                         else:
                             order, order_params = sort_expression(sort, columns) if sort else (ident('event_time') if 'event_time' in columns else ident(next(iter(columns))), ())
-                            tie = ', `id` ' + direction if 'id' in columns and order != '`id`' else ''
+                            tie_columns = ['event_time', 'source_fingerprint'] if 'source_fingerprint' in columns else ['id']
+                            tie = ''.join(', ' + ident(name) + ' ' + direction for name in tie_columns if name in columns and order != ident(name))
                             cursor.execute(f'SELECT * FROM {target}{where} ORDER BY {order} {direction}{tie} LIMIT %s OFFSET %s', params + order_params + (size + 1, (page - 1) * size))
                             raw = cursor.fetchall()
                             more = len(raw) > size
@@ -189,6 +202,14 @@ def register(app, login_required, render_dashboard):
         except Exception as exc:
             rows, headers, buckets, more = [], [], [], False
             flash(f'Log Explore: {exc}', 'error')
-        return render_dashboard('log_explore.html', active_menu='log_explore', connections=connections, tables=tables, selected_connection=selected_connection, selected_table=selected_table, query=query, view=view, interval=interval, start=start, end=end, page=page, size=size, rows=rows, headers=headers, more=more, buckets=buckets, link=link, sort=sort, direction=direction)
+        def rule_sources(rule):
+            if rule.get('field') != '__source_connection__':
+                return []
+            try:
+                value = json.loads(rule.get('value', '[]'))
+                return value if isinstance(value, list) else []
+            except ValueError:
+                return []
+        return render_dashboard('log_explore.html', active_menu='log_explore', connections=connections, tables=tables, selected_connection=selected_connection, selected_table=selected_table, source_profiles=source_profiles, rules=rules, rule_sources=rule_sources, rule_mode=rule_mode, field_options=field_options, operators=OPERATORS, source_metadata_available='source_server_uuid' in columns, view=view, interval=interval, start=start, end=end, page=page, size=size, rows=rows, headers=headers, more=more, buckets=buckets, link=link, sort=sort, direction=direction)
 
     app.register_blueprint(bp)

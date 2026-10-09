@@ -84,6 +84,8 @@ The archive table uses a normalized envelope so several source types can share a
 | `payload` | JSON representation of original source row columns |
 | `archived_at` | Archive insertion time |
 | `source_fingerprint` | SHA-256-derived row identity |
+| `source_server_uuid`, `source_hostname` | Actual source instance observed during retrieval |
+| `source_connection`, `source_table` | Logical source connection and source table at insertion |
 
 The primary key is `(event_time, source_fingerprint)`. The table is partitioned by monthly `RANGE COLUMNS(event_time)` partitions.
 

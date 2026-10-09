@@ -13,7 +13,8 @@ from datetime import date, datetime, timezone
 from .config import ArchiveConfig
 from .job_state import load_state
 from .mysql_util import archive_connection, ident, source_connection
-from .control_store import check_cancelled
+from .control_store import check_cancelled, register_source_uuid
+from .source_identity import read_source_identity
 
 
 def _month_start(value: date) -> date:
@@ -46,13 +47,30 @@ def ensure_schema(config: ArchiveConfig) -> None:
                 payload JSON NOT NULL,
                 archived_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
                 source_fingerprint BINARY(32) NOT NULL,
+                source_server_uuid CHAR(36) NULL,
+                source_connection VARCHAR(255) NULL,
+                source_table VARCHAR(255) NULL,
+                source_hostname VARCHAR(255) NULL,
                 PRIMARY KEY (event_time, source_fingerprint),
-                KEY ix_archived_at (archived_at)
+                KEY ix_archived_at (archived_at),
+                KEY ix_source_uuid_time (source_server_uuid, event_time)
             ) ENGINE=InnoDB PARTITION BY RANGE COLUMNS(event_time) (
                 PARTITION p_bootstrap VALUES LESS THAN ('2000-01-01')
             )"""
         )
-        cur.execute(f"ALTER TABLE {db}.{table} MODIFY log_type VARCHAR(255) NOT NULL")
+        cur.execute(f"SHOW COLUMNS FROM {db}.{table}")
+        columns = {row[0]: row[1].lower() for row in cur.fetchall()}
+        changes = []
+        if columns.get('log_type') != 'varchar(255)':
+            changes.append('MODIFY log_type VARCHAR(255) NOT NULL')
+        for name, definition in [('source_server_uuid', 'CHAR(36) NULL'), ('source_connection', 'VARCHAR(255) NULL'), ('source_table', 'VARCHAR(255) NULL'), ('source_hostname', 'VARCHAR(255) NULL')]:
+            if name not in columns:
+                changes.append(f'ADD COLUMN {ident(name)} {definition}')
+        cur.execute(f"SHOW INDEX FROM {db}.{table} WHERE Key_name='ix_source_uuid_time'")
+        if not cur.fetchall():
+            changes.append('ADD INDEX ix_source_uuid_time (source_server_uuid, event_time)')
+        if changes:
+            cur.execute(f"ALTER TABLE {db}.{table} " + ', '.join(changes))
         conn.commit()
     ensure_future_partitions(config)
 
@@ -91,6 +109,10 @@ def archive_error_log(config: ArchiveConfig) -> tuple[int, dict[str, str]]:
     cursors = dict(state.get("source_cursors", {}))
     final_cursors = dict(cursors)
     with source_connection(config) as source, archive_connection(config) as archive:
+        server_uuid, server_hostname = read_source_identity(source)
+        source_name = getattr(config, 'source_connection_name', '')
+        if source_name:
+            register_source_uuid(source_name, server_uuid, {'host': config.source_host, 'port': config.source_port, 'socket': config.source_socket}, hostname=server_hostname)
         read = source.cursor(dictionary=True, buffered=False)
         write = archive.cursor()
         retention_floor = _month_start(_add_months(datetime.now(timezone.utc).date(), -config.retention_months))
@@ -101,8 +123,8 @@ def archive_error_log(config: ArchiveConfig) -> tuple[int, dict[str, str]]:
             cursor_key = source.get("cursor_key") or f"custom:{source['name']}"
             selected.append((cursor_key, source.get("log_type") or source["name"], f"{ident(schema)}.{ident(table)}", source["timestamp_column"]))
         sql = f"""INSERT IGNORE INTO {_table(config)}
-            (event_time, log_type, payload, source_fingerprint)
-            VALUES (%s, %s, %s, UNHEX(SHA2(%s, 256)))"""
+            (event_time, log_type, payload, source_fingerprint, source_server_uuid, source_connection, source_table, source_hostname)
+            VALUES (%s, %s, %s, UNHEX(SHA2(%s, 256)), %s, %s, %s, %s)"""
         for cursor_key, log_type, table_name, timestamp_column in selected:
             # Mapping-based error/general/slow log sources were historically
             # saved as custom:<mapping>. Rename those existing labels in place;
@@ -125,7 +147,7 @@ def archive_error_log(config: ArchiveConfig) -> tuple[int, dict[str, str]]:
                 for row in rows:
                     event_time = row.pop(timestamp_column.upper(), row.pop(timestamp_column, None))
                     payload = json.dumps(row, default=str, sort_keys=True)
-                    write.execute(sql, (event_time, log_type, payload, f"{cursor_key}|{event_time}|{payload}"))
+                    write.execute(sql, (event_time, log_type, payload, f"{cursor_key}|{event_time}|{payload}", server_uuid, source_name or None, table_name.replace('`', ''), server_hostname))
                     copied += write.rowcount
                     final_cursor = event_time
                 if copied == batch_start_count:

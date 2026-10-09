@@ -1,11 +1,21 @@
 {% extends 'base.html' %}
 {% block content %}
+{% macro rule_row(rule) -%}
+<div class="filter-rule">
+<label>Field <select name="rule_field"><option value="">Choose field</option>{% for value,label in field_options %}<option value="{{ value }}" {{ 'selected' if rule.get('field') == value else '' }}>{{ label }}</option>{% endfor %}</select></label>
+<label>Operator <select name="rule_op">{% for value,label in operators %}<option value="{{ value }}" {{ 'selected' if rule.get('op', 'contains') == value else '' }}>{{ label }}</option>{% endfor %}</select></label>
+<label class="rule-value">Value <input name="rule_value" value="{{ rule.get('value', '') }}" maxlength="1000" placeholder="Text, number or date">
+<select data-source-rule-values multiple size="4" aria-label="Source connections for this rule" hidden>{% for source in source_profiles %}<option value="{{ source.name }}" {{ 'selected' if source.name in rule_sources(rule) else '' }} {{ 'disabled' if not source.server_uuid else '' }}>{{ source.name }} · {{ source.socket or (source.host ~ ':' ~ (source.port or '3306')) }} · {{ (source.get('server_uuids')|join(', ')) if source.get('server_uuids') else (source.server_uuid or 'UUID not registered yet') }}</option>{% endfor %}<option value="__unknown__" {{ 'selected' if '__unknown__' in rule_sources(rule) else '' }}>Legacy / untracked source</option></select>
+</label>
+<button type="button" data-remove-rule title="Remove filter rule" aria-label="Remove filter rule">×</button>
+</div>
+{%- endmacro %}
 <section>
 <h1>Log Explore</h1>
 <form method="get" class="table-controls" id="explore-controls">
 <label>Archive connection <select name="connection" onchange="this.form.elements.table.value='';this.form.submit()"><option value="">Select connection</option>{% for item in connections %}<option value="{{ item.name }}" {{ 'selected' if item.name == selected_connection else '' }}>{{ item.name }}</option>{% endfor %}</select></label>
 <label>Archive table <select name="table" onchange="this.form.submit()"><option value="">Select table</option>{% for item in tables %}<option value="{{ item.name }}" {{ 'selected' if item.name == selected_table else '' }}>{{ item.archive_db }}.{{ item.archive_table }}</option>{% endfor %}</select></label>
-<label>Search <input name="q" value="{{ query }}" placeholder="Search log fields"></label>
+
 <label>View <select name="view" onchange="this.form.submit()"><option value="table" {{ 'selected' if view == 'table' else '' }}>Table</option><option value="chart" {{ 'selected' if view == 'chart' else '' }}>Bar chart</option></select></label>
 {% if view == 'chart' %}
 <label>Interval <select name="interval">{% for choice in ['hour','day','week','month'] %}<option value="{{ choice }}" {{ 'selected' if interval == choice else '' }}>{{ choice|capitalize }}</option>{% endfor %}</select></label>
@@ -14,7 +24,16 @@
 <input type="hidden" name="size" value="{{ size }}">
 <input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="direction" value="{{ direction }}">
 {% endif %}
-<button>Apply</button>
+
+<fieldset class="explore-filter-panel">
+<legend>Filter rules</legend>
+<label>Match <select name="rule_mode"><option value="all" {{ 'selected' if rule_mode == 'all' else '' }}>All rules (AND)</option><option value="any" {{ 'selected' if rule_mode == 'any' else '' }}>Any rule (OR)</option></select></label>
+<div id="explore-rules">{% for rule in rules or [{}] %}{{ rule_row(rule) }}{% endfor %}</div>
+<template id="explore-rule-template">{{ rule_row({}) }}</template>
+<button type="button" id="add-explore-rule">+ Add rule</button>
+<p class="field-help">Source connection is optional: without a source rule, all sources are included. Select multiple connections in a source rule (Ctrl/Cmd-click) to include all their observed cluster UUIDs. Fields include archive metadata and JSON fields from up to 100 recent records. Numeric JSON values compare as numbers; quote a value such as "123" to match text.</p>
+</fieldset>
+<button>Apply filters</button>
 </form>
 </section>
 {% if selected_table %}
@@ -24,7 +43,7 @@
 <nav class="table-controls explore-page-controls" aria-label="Data pages">
 {% if page > 1 %}<a class="icon-button" href="{{ link(page=page-1) }}" title="Previous page" aria-label="Previous page">‹</a>{% else %}<button type="button" disabled title="Previous page" aria-label="Previous page">‹</button>{% endif %}
 <form method="get" class="table-controls">
-{% for key,value in request.args.items() if key not in ['page','size','download'] %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% for key,values in request.args.lists() if key not in ['page','size','download','q'] %}{% for value in values %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}{% endfor %}
 <label>Page <input type="number" name="page" min="1" max="100000" value="{{ page }}" class="explore-page-number"></label>
 <label>Rows per page <select name="size" onchange="this.form.elements.page.value=1;this.form.submit()">{% for count in [25,50,100,250] %}<option {{ 'selected' if size == count else '' }}>{{ count }}</option>{% endfor %}</select></label>
 <button type="submit">Go</button>
@@ -36,8 +55,10 @@
 <div class="table-icons"><a class="icon-button" href="{{ link(download='csv') }}" title="Download {{ 'displayed page' if view == 'table' else 'chart counts' }} as CSV" aria-label="Download CSV">⇩</a>{% if view == 'table' %}<button type="button" class="icon-button" data-reset-table="explore-table" title="Reset column layout" aria-label="Reset column layout">↺</button>{% endif %}</div></div>
 {% if view == 'table' %}
 <p>Click a column heading to sort across the archive. Drag headings to rearrange; drag their edges to resize. Click a cell to read its full value.</p>
-<div class="tablewrap"><table id="explore-table" class="listing-table fixed-rows" data-layout-key="explore-{{ selected_connection }}-{{ selected_table }}"><thead><tr>{% for path,label,encoded in headers %}<th data-column-key="{{ encoded }}" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == encoded else 'none' }}"><a href="{{ link(sort=encoded, direction='desc' if sort == encoded and direction == 'asc' else 'asc', page=1) }}">{{ label }}{{ (' ▲' if direction == 'asc' else ' ▼') if sort == encoded else '' }}</a></th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for path,label,encoded in headers %}<td class="expandable-cell" data-full="{{ row.get(path, '') if row.get(path) is not none else '' }}">{{ row.get(path, '') if row.get(path) is not none else '' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+<div class="tablewrap"><table id="explore-table" class="listing-table fixed-rows" data-layout-key="explore-{{ selected_connection }}-{{ selected_table }}"><thead><tr>{% for path,label,encoded in headers %}<th data-column-key="{{ encoded }}" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == encoded else 'none' }}"><a href="{{ link(sort=encoded, direction='desc' if sort == encoded and direction == 'asc' else 'asc', page=1) }}">{{ label }}{% if path == ('source_fingerprint',) %}<sup>1</sup>{% endif %}{{ (' ▲' if direction == 'asc' else ' ▼') if sort == encoded else '' }}</a></th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for path,label,encoded in headers %}{% if path[0] in ['source_server_uuid','source_connection'] and row.get(('source_server_uuid',)) %}<td><button type="button" class="source-detail-link" data-source-uuid="{{ row.get(('source_server_uuid',)) }}" data-source-name="{{ row.get(('source_connection',)) or '' }}" data-source-table="{{ row.get(('source_table',)) or '' }}" data-source-hostname="{{ row.get(('source_hostname',)) or '' }}">{{ row.get(path) or 'Source details' }}</button></td>{% else %}<td class="expandable-cell" data-full="{{ row.get(path, '') if row.get(path) is not none else '' }}">{{ row.get(path, '') if row.get(path) is not none else '' }}</td>{% endif %}{% endfor %}</tr>{% endfor %}</tbody></table></div>
 {% if not rows %}<p>No records found.</p>{% endif %}
+{% if not source_metadata_available %}<p>This table has not captured source UUIDs yet. Run its archiver job to upgrade the table; older records cannot be attributed automatically.</p>{% endif %}
+<details class="fingerprint-note"><summary>Source fingerprint¹</summary><p>¹ Calculated by the archiver as SHA-256 of <code>source cursor identity | event timestamp | canonical JSON payload</code> (the actual separator is <code>|</code>, without added spaces). The cursor is the built-in source key or <code>custom:&lt;mapping-name&gt;</code>; JSON keys are sorted using Python <code>json.dumps(row, default=str, sort_keys=True)</code>. The source timestamp is stored separately as <code>event_time</code>. Log Explore displays the stored 32-byte hash as 64 hexadecimal characters. Replayed identical records have the same fingerprint and are ignored by the archive primary key. Server UUID is stored separately and does not change this existing fingerprint calculation.</p></details>
 
 {% else %}
 <p>Record counts by {{ interval }} in UTC. Weeks begin on Monday. Empty intervals have zero records.</p>
@@ -45,4 +66,7 @@
 {% endif %}
 </section>
 {% else %}<section><p>Select an archive connection and table to explore its logs.</p></section>{% endif %}
+<dialog id="source-connection-detail"><div class="dialog-head"><strong>Source connection details</strong><button type="button" onclick="this.closest('dialog').close()" aria-label="Close source details">×</button></div><div id="source-connection-content"></div>{% if can_manage_profiles %}<p><a href="{{ url_for('configuration', config_tab='source-connections') }}">View source connections</a></p>{% endif %}</dialog>
+<script id="explore-source-profiles" type="application/json">{{ source_profiles|tojson }}</script>
+<script src="{{ url_for('static', filename='log_explore_filters.js') }}"></script>
 {% endblock %}

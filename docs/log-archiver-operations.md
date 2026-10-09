@@ -74,8 +74,13 @@ CREATE TABLE archive_schema.archive_table (
     payload JSON NOT NULL,
     archived_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     source_fingerprint BINARY(32) NOT NULL,
+    source_server_uuid CHAR(36) NULL,
+    source_connection VARCHAR(255) NULL,
+    source_table VARCHAR(255) NULL,
+    source_hostname VARCHAR(255) NULL,
     PRIMARY KEY (event_time, source_fingerprint),
-    KEY ix_archived_at (archived_at)
+    KEY ix_archived_at (archived_at),
+    KEY ix_source_uuid_time (source_server_uuid, event_time)
 ) ENGINE=InnoDB
 PARTITION BY RANGE COLUMNS(event_time) (
     PARTITION p_bootstrap VALUES LESS THAN ('2000-01-01')
@@ -83,6 +88,22 @@ PARTITION BY RANGE COLUMNS(event_time) (
 ```
 
 `event_time` contains the source timestamp, interpreted consistently in UTC by the operating configuration. `payload` contains the remaining source columns; the timestamp is moved into `event_time`. `archived_at` is the insertion timestamp. Standard labels are `error_log`, `general_log` and `slow_log`; custom labels use the configured source name. The binary SHA-256 fingerprint identifies replayed source records.
+
+## Source instance identity and Log Explore rules
+
+On retrieval, the worker reads `SELECT @@server_uuid, @@hostname` on the actual source connection. Every new archive row records that instance's UUID and hostname, the logical connection name and source table. The control connection entity stores its latest `server_uuid` / `server_hostname`, the accumulated `server_uuids`, and UUID-to-hostname observations in `server_hostnames`. Updates target the connection entity under the same singleton row lock used by settings saves, preserving unrelated policy/entities. Saving a source connection explicitly validates Vault/MySQL access and captures identity; simply opening its page does not retrieve credentials.
+
+A cluster endpoint can move between instances without changing its configured IP. A different UUID or hostname is recorded, not treated as an ingestion failure. Checkpoints and fingerprints belong to the logical source/mapping and are preserved across that move. Duplicate replay retains the metadata from the first successful insert; it does not relabel a stored record as belonging to a later failover instance. Timestamp-selection limits still apply to records newly visible after failover.
+
+Schema preparation adds nullable identity columns and `ix_source_uuid_time` to old archive tables. It does not rehash records or infer UUIDs for historical data. Old rows remain untracked unless their identity was actually captured at insertion. Identity migration uses MySQL DDL and can take time on a large existing table; it requires archive ALTER privileges.
+
+**Log Explore** requires only an archive connection/table. Its optional rule builder supports up to 20 field/operator/value rules, matched with All (AND) or Any (OR). The **Source connection (multi-select)** rule includes all observed UUIDs for each selected logical connection; connections within the rule are combined with OR. No source rule means no source restriction. The Legacy / untracked option matches NULL/empty UUIDs. Source identity is server-based: two registered connection aliases pointing to the same UUID refer to the same instance. Use the `source_connection` field rule separately when filtering by the stored logical-name snapshot is necessary.
+
+Native metadata and expanded JSON fields support Contains, Equals, Does not equal, ordering/date comparisons, Is missing / null and Is present. JSON numbers compare numerically; quoted values match JSON text. Values and JSON paths are parameter-bound, and root columns are validated against table metadata. Field choices include metadata and JSON paths found in up to 100 recent records; rules already in the request retain their selected paths even when they match no rows. Missing fields are distinct from empty strings; missing values do not satisfy ordinary equality/ordering rules.
+
+Rules affect table rows, chart counts and CSV downloads and are retained across sorting/pagination. Clicking a source UUID/connection in a row shows the recorded identity and matching current connection details, without exposing passwords or Secret OCIDs.
+
+The table's **source_fingerprint¹** footnote explains that this is a worker-generated hash, displayed as 64 hexadecimal characters. The exact input remains `cursor_key|event_time|payload`, where payload is `json.dumps(row, default=str, sort_keys=True)` after extracting the source timestamp. The cursor is a built-in source key or `custom:<mapping-name>`. The worker uses MySQL `UNHEX(SHA2(input, 256))`. UUID/hostname observations do not change that calculation, preserving existing duplicate suppression. Independent control configurations sharing an archive should use distinct mapping identities to avoid fingerprint namespace collisions.
 
 ## Partition creation and retention
 
@@ -139,7 +160,7 @@ source cursor identity | source event timestamp | canonical JSON payload
 
 The primary key suppresses replay duplicates. A batch with zero inserted rows logs an INFO diagnostic and processing continues. It is not evidence that batch size is too small. `INSERT IGNORE` can also mask some nonduplicate data conditions; zero inserts do not prove that all ignored rows were duplicates.
 
-The archive transaction commits before checkpoints are published. A crash after archive commit but before checkpoint recording causes replay, with duplicate suppression on retry. Different mapping transactions and control-state updates are not one distributed transaction; a failed cycle may have committed some mappings already.
+The archive transaction commits before checkpoints are published. A crash after archive commit but before checkpoint recording causes replay, with duplicate suppression on retry. Cached connections are separated by source, archive, control and exploration roles, even when host/account credentials match. Control reads and cancellation checks cannot share or roll back the ingestion transaction. Different mapping transactions and control-state updates are not one distributed transaction; a failed cycle may have committed some mappings already.
 
 Rows arriving with timestamps **older** than the checkpoint remain outside the query. Boundary replay does not provide an overlap window or change data capture. Source truncation/ring-buffer eviction can also lose records before extraction. Two records with the same cursor identity, timestamp and canonical payload collapse into one archived record.
 

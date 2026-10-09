@@ -481,6 +481,10 @@ def configuration_entity(kind: str, index: int):
         updated = items[:index] + [candidate] + items[index + 1:] if index >= 0 else [*items, candidate]
         settings[key] = updated
         try:
+            if kind == 'source-connections':
+                from modules.source_identity import validate_source_connection, with_identity
+                server_uuid, hostname = validate_source_connection(candidate)
+                candidate.update(with_identity({**item, **candidate}, server_uuid, hostname))
             save_settings(settings); ArchiveConfig.from_env(False, False)
             flash("Configuration record saved.", "success"); return redirect(url_for("configuration", config_tab=request.form.get("config_tab", "source-connections")))
         except Exception as exc:

@@ -6,6 +6,7 @@
     <input type="hidden" name="config_tab" value="{{ return_tab }}">
     <fieldset>
       {% if kind in ('source-connections', 'archive-connections') %}
+      {% if kind == 'source-connections' %}<p>Server UUID: <strong>{{ item.get('server_uuid') or 'Not registered yet' }}</strong>. Saving validates the source connection and reads its MySQL server UUID.</p>{% endif %}
       <label>Name *<input name="name" value="{{ item.get('name', '') }}" required></label>
       <label>Host *<input name="host" value="{{ item.get('host', '') }}" required></label>
       <label>Port *<input name="port" value="{{ item.get('port', '3306') }}" required></label>

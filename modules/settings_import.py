@@ -30,6 +30,24 @@ def parse_settings(stream):
             raise ValueError(f'{kind} must be a list of objects.')
     for kind in ('source_connections', 'archive_connections'):
         for item in settings.get(kind, []):
+            if kind == 'source_connections' and item.get('server_uuid'):
+                import uuid
+                try:
+                    if str(uuid.UUID(item['server_uuid'])) != item['server_uuid']:
+                        raise ValueError
+                except (ValueError, AttributeError, TypeError):
+                    raise ValueError('Source connection server_uuid must be a canonical MySQL UUID.') from None
+            if kind == 'source_connections':
+                import uuid
+                observed = item.get('server_uuids', [])
+                hostnames = item.get('server_hostnames', {})
+                if not isinstance(observed, list) or not isinstance(hostnames, dict):
+                    raise ValueError('Observed source UUIDs and hostnames must be a list and object.')
+                try:
+                    if any(not isinstance(value, str) or str(uuid.UUID(value)) != value for value in [*observed, *hostnames]):
+                        raise ValueError
+                except (ValueError, AttributeError, TypeError):
+                    raise ValueError('Source connection observed UUIDs must be canonical MySQL UUIDs.') from None
             secret = item.get('secret_ocid', '')
             if not isinstance(secret, str) or not secret.startswith('ocid1.vaultsecret.'):
                 raise ValueError(f'{kind} requires credential Secret OCIDs.')

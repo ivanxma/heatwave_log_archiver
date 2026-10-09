@@ -87,6 +87,7 @@ class ArchiveConfig:
     batch_size: int
     worker_threads: int
     schedule: str
+    source_connection_name: str = ""
 
     @classmethod
     def from_env(cls, resolve_source_secret: bool = True, resolve_archive_secret: bool = True, *, settings: dict[str, object] | None = None) -> "ArchiveConfig":
@@ -199,6 +200,7 @@ class ArchiveConfig:
         archive_user, archive_password = vault_credential(archive_secret, archive_user)
         return replace(
             self,
+            source_connection_name=source_record.get('name', ''),
             log_types=(), custom_sources=({"name": mapping["name"], "source": source_table.get("source") or mapping["source"], "timestamp_column": source_table.get("timestamp_column") or mapping["timestamp_column"], "cursor_key": cursor_key, "log_type": archive_log_type},),
             source_host=source_record.get("host") or mapping.get("source_host") or self.source_host, source_port=int(source_record.get("port") or mapping.get("source_port") or self.source_port), source_user=source_user, source_password=source_password, source_secret_ocid=source_secret, source_socket=source_record.get("socket") or mapping.get("source_socket") or self.source_socket,
             archive_host=archive_record.get("host") or mapping.get("archive_host") or self.archive_host, archive_port=int(archive_record.get("port") or mapping.get("archive_port") or self.archive_port), archive_user=archive_user, archive_password=archive_password, archive_secret_ocid=archive_secret, archive_socket=archive_record.get("socket") or mapping.get("archive_socket") or self.archive_socket,

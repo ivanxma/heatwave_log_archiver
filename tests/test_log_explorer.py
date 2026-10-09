@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 import unittest
 from tests import test_navigation as navigation
-from modules.log_explorer import flatten, sort_expression, search_clause, fill_buckets
+from modules.log_explorer import flatten, sort_expression, fill_buckets
+from modules.explorer_filters import compile_filters
 
 
 class ExplorerTests(unittest.TestCase):
@@ -27,7 +28,7 @@ class ExplorerTests(unittest.TestCase):
         self.assertIn('quoted', params[0])
         with self.assertRaises(ValueError):
             sort_expression('["id;DROP TABLE t"]', {'id': 'bigint'})
-        where, params = search_clause('100%_!', {'payload': 'json'})
+        where, params = compile_filters([{'field':'["payload"]', 'op':'contains', 'value':'100%_!'}], 'all', [], {'payload': 'json'})
         self.assertEqual(params, ('%100!%!_!!%',))
         self.assertIn('LIKE %s', where)
 
@@ -61,7 +62,7 @@ class ExplorerTests(unittest.TestCase):
 
     def test_page_expands_fields_escapes_html_and_limits_fetch(self):
         with self.fake_connection():
-            response = self.client.get('/log-explore?connection=archive&table=logs&size=25&q=test')
+            response = self.client.get('/log-explore?connection=archive&table=logs&size=25&rule_field=%5B%22payload%22%2C%22message%22%5D&rule_op=contains&rule_value=test')
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'payload.message', response.data)
         self.assertNotIn(b'<script>alert(1)</script>', response.data)
@@ -94,3 +95,34 @@ class ExplorerTests(unittest.TestCase):
         self.assertEqual([row['count'] for row in rows], [0, 2, 0])
         with self.assertRaisesRegex(ValueError, '1,000'):
             fill_buckets([], date(2026, 1, 1), date(2026, 10, 1), 'hour')
+
+    def test_rules_sources_and_values_survive_pagination_links(self):
+        with self.fake_connection():
+            response = self.client.get('/log-explore', query_string=[('connection','archive'),('table','logs'),('rule_field','["payload","code"]'),('rule_op','gte'),('rule_value','2'),('rule_field','["payload","message"]'),('rule_op','contains'),('rule_value','script')])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data.count(b'name="rule_field" value='), 2)
+        self.assertIn(b'Filter rules', response.data)
+        self.assertNotIn(b'name="q"', response.data)
+        self.assertIn(b'SHA-256', response.data)
+
+    def test_filters_reject_untrusted_roots_and_missing_metadata(self):
+        with self.assertRaises(ValueError):
+            compile_filters([{'field':'["evil`sql"]', 'op':'eq', 'value':'x'}], 'all', [], {'payload':'json'})
+        with self.assertRaisesRegex(ValueError, 'no source UUID'):
+            compile_filters([], 'all', ['__unknown__'], {'payload':'json'})
+        expression, params = compile_filters([{'field':'["payload","missing"]', 'op':'is_null', 'value':''}], 'all', [], {'payload':'json'})
+        self.assertEqual(expression.count('%s'), len(params))
+        self.assertEqual(params[-1], 'NULL')
+
+    def test_optional_source_rule_expands_cluster_uuid_history(self):
+        profiles=[{'name':'cluster','server_uuid':'22222222-2222-2222-2222-222222222222','server_uuids':['11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222']}]
+        expression, params = compile_filters([{'field':'__source_connection__','op':'eq','value':'["cluster"]'}], 'all', [], {'source_server_uuid':'char(36)'}, profiles)
+        self.assertIn('IN (%s,%s)', expression)
+        self.assertEqual(len(params), 2)
+        from werkzeug.datastructures import MultiDict
+        from modules.explorer_filters import parse_rules
+        self.assertEqual(parse_rules(MultiDict([('rule_field','__source_connection__'),('rule_op','eq'),('rule_value','[]')])), [])
+        self.assertEqual(compile_filters([], 'all', [], {'payload':'json'}), ('', ()))
+
+    def test_binary_fingerprint_is_displayed_as_hex(self):
+        self.assertEqual(flatten({'source_fingerprint':bytes.fromhex('ab'*32)}, set())[('source_fingerprint',)], 'ab'*32)

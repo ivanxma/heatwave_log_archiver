@@ -208,6 +208,18 @@ class NavigationTests(unittest.TestCase):
                 app.SERVER_SESSIONS.delete(session.get('connection_id'))
 
 
+    def test_source_connection_save_accepts_cluster_identity_changes(self):
+        first, second = '11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'
+        data = {'csrf_token':'test-csrf','name':'source-cluster','host':'source.example','port':'3306','user':'source','secret_ocid':'ocid1.vaultsecret.source','socket':''}
+        with patch('app.test_mysql_connection'), patch('modules.source_identity.validate_source_connection', side_effect=[(first,'instance-one'),(second,'instance-two')]):
+            self.assertEqual(self.client.post('/configuration/source-connections/new', data=data).status_code, 302)
+            self.assertEqual(self.client.post('/configuration/source-connections/0', data=data).status_code, 302)
+        profile = self.settings['source_connections'][0]
+        self.assertEqual(profile['server_uuid'], second)
+        self.assertEqual(profile['server_uuids'], [first,second])
+        self.assertEqual(profile['server_hostname'], 'instance-two')
+
+
 
 if __name__ == "__main__":
     unittest.main()

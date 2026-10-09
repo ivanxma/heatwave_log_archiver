@@ -11,8 +11,8 @@ import mysql.connector
 from .config import ArchiveConfig
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_$]+$")
-_CONNECTION_CACHE: dict[tuple[str, int, str, str, str], object] = {}
-_CONNECTION_LOCKS: dict[tuple[str, int, str, str, str], threading.RLock] = {}
+_CONNECTION_CACHE: dict[tuple[str, int, str, str, str, str], object] = {}
+_CONNECTION_LOCKS: dict[tuple[str, int, str, str, str, str], threading.RLock] = {}
 _CACHE_LOCK = threading.RLock()
 
 
@@ -31,9 +31,9 @@ def _connection(host: str, port: int, user: str, password: str, socket: str):
     return mysql.connector.connect(**args)
 
 
-def _connection_key(host: str, port: int, user: str, password: str, socket: str) -> tuple[str, int, str, str, str]:
+def _connection_key(host: str, port: int, user: str, password: str, socket: str, role: str = "default") -> tuple[str, int, str, str, str, str]:
     """Identify a live connection without retaining the password as a cache key."""
-    return host, port, user, hashlib.sha256(password.encode("utf-8")).hexdigest(), socket
+    return host, port, user, hashlib.sha256(password.encode("utf-8")).hexdigest(), socket, role
 
 
 def clear_connection_cache() -> None:
@@ -49,7 +49,7 @@ def clear_connection_cache() -> None:
             pass
 
 
-def _drop_connection(key: tuple[str, int, str, str, str], connection: object) -> None:
+def _drop_connection(key: tuple[str, int, str, str, str, str], connection: object) -> None:
     with _CACHE_LOCK:
         if _CONNECTION_CACHE.get(key) is connection:
             _CONNECTION_CACHE.pop(key, None)
@@ -60,9 +60,9 @@ def _drop_connection(key: tuple[str, int, str, str, str], connection: object) ->
 
 
 @contextmanager
-def _cached_connection(host: str, port: int, user: str, password: str, socket: str):
+def _cached_connection(host: str, port: int, user: str, password: str, socket: str, *, role: str = "default"):
     """Borrow a verified MySQL connection held only in this process's memory."""
-    key = _connection_key(host, port, user, password, socket)
+    key = _connection_key(host, port, user, password, socket, role)
     with _CACHE_LOCK:
         connection_lock = _CONNECTION_LOCKS.setdefault(key, threading.RLock())
     # One operation at a time per connection; different connection identities
@@ -105,11 +105,11 @@ def test_mysql_connection(profile: dict[str, object], username: str, password: s
 
 @contextmanager
 def source_connection(config: ArchiveConfig):
-    with _cached_connection(config.source_host, config.source_port, config.source_user, config.source_password, config.source_socket) as connection:
+    with _cached_connection(config.source_host, config.source_port, config.source_user, config.source_password, config.source_socket, role="source") as connection:
         yield connection
 
 
 @contextmanager
 def archive_connection(config: ArchiveConfig):
-    with _cached_connection(config.archive_host, config.archive_port, config.archive_user, config.archive_password, config.archive_socket) as connection:
+    with _cached_connection(config.archive_host, config.archive_port, config.archive_user, config.archive_password, config.archive_socket, role="archive") as connection:
         yield connection

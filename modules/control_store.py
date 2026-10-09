@@ -96,7 +96,7 @@ def connection():
     # Deferred imports avoid the config / MySQL adapter import cycle.
     from .mysql_util import _cached_connection
     profile, username, password = target()
-    with _cached_connection(str(profile.get('host', '127.0.0.1')), int(profile.get('port', 3306)), username, password, str(profile.get('socket', '')) if profile.get('mode') == 'socket' else '') as conn:
+    with _cached_connection(str(profile.get('host', '127.0.0.1')), int(profile.get('port', 3306)), username, password, str(profile.get('socket', '')) if profile.get('mode') == 'socket' else '', role='control') as conn:
         yield conn
 
 
@@ -144,6 +144,32 @@ def load_settings():
             for kind, payload in cur.fetchall():
                 settings.setdefault(kind, []).append(decode(payload))
             return settings
+        finally:
+            cur.close()
+
+
+def register_source_uuid(name, server_uuid, expected, hostname=""):
+    """Update only the observed connection record; serialize against settings saves."""
+    from .source_identity import with_identity
+    with connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(f"SELECT id FROM {table('control_settings')} WHERE id=1 FOR UPDATE")
+            cur.fetchone()
+            cur.execute(f"SELECT position, payload FROM {table('control_entities')} WHERE kind=%s", ('source_connections',))
+            for position, payload in cur.fetchall():
+                profile = decode(payload)
+                if profile.get('name') != name:
+                    continue
+                if any(str(profile.get(key, default)) != str(expected.get(key, default)) for key, default in [('host', ''), ('port', '3306'), ('socket', '')]):
+                    raise RuntimeError('Source connection changed during execution; retry with the saved configuration.')
+                updated = with_identity(profile, server_uuid, hostname)
+                if updated != profile:
+                    profile = updated
+                    cur.execute(f"UPDATE {table('control_entities')} SET payload=%s WHERE kind=%s AND position=%s", (json.dumps(profile), 'source_connections', position))
+                conn.commit()
+                return
+            raise RuntimeError('Source connection was removed during execution; retry with the saved configuration.')
         finally:
             cur.close()
 
