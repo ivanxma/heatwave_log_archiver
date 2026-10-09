@@ -22,6 +22,8 @@ The deployment diagram shows the OCI Compute services, OCI Vault/IAM, MySQL role
 
 Open the [editable draw.io diagram](diagrams/deployment-architecture.drawio) in draw.io Desktop or diagrams.net to update it. After editing, export its PNG preview to `diagrams/deployment-architecture.png` so this document displays the current architecture.
 
+The diagram uses official Compute VM, MySQL, IAM, Vault, user, and NSG shapes from [Oracle's OCI Architecture Diagram Toolkit](https://docs.oracle.com/en-us/iaas/Content/General/Reference/graphicsfordiagrams.htm) (v24.2). The editable vector shapes are embedded in the diagram. To reuse them, choose **File → Open Library from → Device** in draw.io and select the companion [OCI deployment library](diagrams/oci-deployment-library.xml). MySQL icons represent configurable database roles; the diagram does not require Oracle-managed MySQL endpoints. The web console, scheduler, worker, bootstrap file, and systemd journal are local application components on the VM.
+
 The web service runs on HTTPS port 443 as a non-root service user. The systemd unit grants only `CAP_NET_BIND_SERVICE` for the privileged listener port. The archive worker is a separate, one-shot systemd service invoked by a persistent timer.
 
 The local `profiles.json` bootstraps the control connection using its endpoint, schema, and credential Secret OCID. The shared control schema stores job policy, mappings, schedule state, execution history, checkpoints, and cancellation state. Source and archive endpoints are independently configurable; the three MySQL roles can share a host. Additional Compute instances can use the same control server and schema, with a shared MySQL `GET_LOCK` preventing overlapping executions.
