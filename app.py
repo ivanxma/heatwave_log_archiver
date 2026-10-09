@@ -327,6 +327,8 @@ def dashboard():
     config = ArchiveConfig.from_env(resolve_source_secret=False, resolve_archive_secret=False)
     page = max(1, request.args.get("page", 1, type=int))
     page_size = request.args.get("page_size", 50, type=int)
+    if page_size not in {25, 50, 100, 250}:
+        page_size = 50
     selected_partition = request.args.get("partition", "")
     selected_source = request.args.get("source", "")
     selected_archive_table = request.args.get("archive_table", "")
@@ -341,6 +343,7 @@ def dashboard():
             archive_config = _archive_view_config(selected_archive_table)
             partitions = list_partitions(archive_config)
             rows, total_rows = fetch_archive_page(archive_config, page, page_size, selected_partition, selected_source)
+            page = min(page, max(1, (total_rows + page_size - 1) // page_size))
         elif selected_tab == "partitions":
             partitions = list_partitions(_archive_view_config(selected_archive_table))
     except Exception as exc:
@@ -356,6 +359,14 @@ def dashboard():
     if execution_page_size not in {25, 50, 100}:
         execution_page_size = 25
     execution_total = len(job_state.get("history", []))
+    execution_page = min(execution_page, max(1, (execution_total + execution_page_size - 1) // execution_page_size))
+    partition_page_size = request.args.get('partition_page_size', 25, type=int)
+    if partition_page_size not in {25, 50, 100}:
+        partition_page_size = 25
+    partition_total = len(partitions)
+    partition_page = min(max(1, request.args.get('partition_page', 1, type=int)), max(1, (partition_total + partition_page_size - 1) // partition_page_size))
+    partition_start = (partition_page - 1) * partition_page_size
+    partition_rows = partitions[partition_start:partition_start + partition_page_size]
     execution_start = (execution_page - 1) * execution_page_size
     execution_history = list(job_state.get("history", []))[execution_start:execution_start + execution_page_size]
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -367,7 +378,7 @@ def dashboard():
                 activity.append({"time": when.strftime("%H:%M"), "count": int(event.get("copied", 0) or 0), "status": event.get("status", "")})
         except (KeyError, ValueError, TypeError):
             continue
-    return render_dashboard("dashboard.html", config=config, partitions=partitions, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_archive_table=selected_archive_table, archive_table_options=config.archive_tables, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, execution_history=execution_history, execution_total=execution_total, execution_page=execution_page, execution_page_size=execution_page_size, activity=activity, active_menu="archive")
+    return render_dashboard("dashboard.html", config=config, partitions=partitions, partition_rows=partition_rows, partition_page=partition_page, partition_page_size=partition_page_size, partition_total=partition_total, rows=rows, total_rows=total_rows, page=page, page_size=page_size, selected_partition=selected_partition, selected_source=selected_source, selected_archive_table=selected_archive_table, archive_table_options=config.archive_tables, selected_tab=selected_tab, source_options=source_options, error=error, job_state=job_state, execution_history=execution_history, execution_total=execution_total, execution_page=execution_page, execution_page_size=execution_page_size, activity=activity, active_menu="archive")
 
 
 @app.get("/archive-export.csv")

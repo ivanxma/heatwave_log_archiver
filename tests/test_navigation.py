@@ -220,6 +220,21 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(profile['server_hostname'], 'instance-two')
 
 
+    def test_partition_pages_slice_metadata_and_preserve_table_selection(self):
+        partitions = [{'partition_name':f'partition-{index:02d}','boundary':'2026-11-01','table_rows':index,'data_length':100} for index in range(60)]
+        with patch('app._archive_view_config'), patch('app.list_partitions', return_value=partitions):
+            response = self.client.get('/?tab=partitions&archive_table=selected-destination&partition_page=2&partition_page_size=25')
+        self.assertEqual(response.status_code, 200)
+        table = response.data.split(b'id="partitions-table"')[1].split(b'</table>')[0]
+        self.assertIn(b'partition-25', table)
+        self.assertIn(b'partition-49', table)
+        self.assertNotIn(b'partition-24', table)
+        self.assertNotIn(b'partition-50', table)
+        self.assertIn(b'name="archive_table" value="selected-destination"', response.data)
+        self.assertIn(b'partition_page=3', response.data)
+        self.assertNotIn(b'class="pagination"', response.data)
+
+
 
 if __name__ == "__main__":
     unittest.main()

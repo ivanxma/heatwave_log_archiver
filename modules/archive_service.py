@@ -241,6 +241,7 @@ def fetch_archive_page(config: ArchiveConfig, page: int, page_size: int, partiti
         cur = conn.cursor(dictionary=True)
         cur.execute(f"SELECT COUNT(*) AS total FROM {_table(config)}{partition_clause}{where}", parameters)
         total = int(cur.fetchone()["total"])
+        page = min(page, max(1, (total + page_size - 1) // page_size))
         cur.execute(f"SELECT event_time, log_type, payload, archived_at FROM {_table(config)}{partition_clause}{where} ORDER BY event_time DESC LIMIT %s OFFSET %s", parameters + (page_size, (page - 1) * page_size))
         return cur.fetchall(), total
 

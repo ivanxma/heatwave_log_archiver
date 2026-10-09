@@ -97,6 +97,7 @@ Save settings before exporting: the export downloads the saved control database 
 - **Job configuration** has Source Connection, Archive Connection, Source Tables, Archive Tables, and Mapping tabs. A source table maps to one archive table; mappings can be enabled or disabled. The Job Policy block controls enablement, interval, retention, batch size, and worker concurrency.
 - **Source types** provide Error Log, General Log, Slow Log, and Custom presets. Standard records are labelled `error_log`, `general_log`, or `slow_log`; custom records use their configured name without a `custom:` prefix.
 - **Archive** uses a three-tab view: **Summary** shows current scheduler status, metric blocks, execution history, and a labelled 24-hour chart; **Archived entries** provides paged, archive-table/source/partition-filtered records with export and reset-layout controls; **Partitions** provides lifecycle actions and partition downloads for the selected archive table.
+- **Table paging** for Execution history, Archived entries and Partitions sits on the left of each table toolbar: Previous, page number, rows/page, Go and Next. Download/layout icons stay on the right; filters and archive selection persist across page changes. Partition selections apply to the displayed page.
 - POST forms use CSRF tokens. A shared MySQL lock prevents concurrent execution across Computes. The configuration screen provides a cancellation override.
 - The systemd timer wakes every minute; the worker applies the configured interval without a service restart.
 
