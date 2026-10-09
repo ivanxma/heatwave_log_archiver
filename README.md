@@ -4,6 +4,14 @@
 
 Linux 9 service and HTTPS web console for archiving MySQL error, slow, general, and optional custom table/view sources into a partitioned archive database.
 
+## High-level architecture
+
+[![MySQL Log Archiver high-level architecture](docs/diagrams/high-level-architecture.png)](docs/diagrams/high-level-architecture.png)
+
+The web console manages jobs and displays archived logs. The scheduler starts the archive worker, which reads source logs and writes them to the archive. Both application processes use the control database and OCI Vault.
+
+Open the [editable draw.io diagram](docs/diagrams/high-level-architecture.drawio), which embeds the official OCI library shapes. See the [detailed architecture](docs/log-archiving-detailed-architecture.md) for deployment and execution details.
+
 ## Security model
 
 Scheduled-job database passwords are never persisted in application files, source code, browser storage, or logs. At execution time the service retrieves source and archive credentials from OCI Vault using the Compute instance principal. Credentials may exist briefly in protected process memory while a connection is active; configuration stores only non-secret connection details and Vault Secret OCIDs.
