@@ -154,6 +154,36 @@ class ControlMySQLTests(unittest.TestCase):
         finally:
             app.SERVER_SESSIONS.delete(token)
 
+    def test_log_explorer_real_json_sort_search_and_time_intervals(self):
+        from unittest.mock import patch
+        import app
+        with control_store.connection() as conn:
+            cur = conn.cursor()
+            cur.execute(f"CREATE TABLE {ident(self.schema)}.explore_logs (id INT PRIMARY KEY, event_time DATETIME, payload JSON)")
+            cur.executemany(f"INSERT INTO {ident(self.schema)}.explore_logs VALUES (%s,%s,%s)", [(1, '2026-10-08 10:00:00', '{"code":2,"message":"first"}'), (2, '2026-10-09 11:00:00', '{"code":10,"message":"second"}'), (3, '2026-10-09 12:00:00', '{"code":3,"message":"third"}')])
+            conn.commit()
+            cur.close()
+        settings = {'archive_connections': [{'name': 'a'}], 'archive_tables': [{'name': 't', 'connection': 'a', 'archive_db': self.schema, 'archive_table': 'explore_logs'}]}
+        token = app.SERVER_SESSIONS.create('explore-test', self.user, self.password, self.profile)
+        try:
+            with patch('modules.log_explorer.connect', side_effect=lambda _: control_store.connection()), patch('modules.log_explorer.control_store.load_settings', return_value=settings), app.app.test_client() as client:
+                with client.session_transaction() as session:
+                    session.update(connection_id=token, session_scope='error-log-archiver')
+                response = client.get('/log-explore', query_string={'connection': 'a', 'table': 't', 'sort': '["payload", "code"]', 'direction': 'asc', 'download': 'csv'})
+                self.assertEqual(response.status_code, 200)
+                import csv, io
+                rows = list(csv.DictReader(io.StringIO(response.data.decode())))
+                self.assertEqual([row['payload.code'] for row in rows], ['2', '3', '10'])
+                response = client.get('/log-explore?connection=a&table=t&q=second&download=csv')
+                self.assertEqual(len(list(csv.DictReader(io.StringIO(response.data.decode())))), 1)
+                for interval in ('hour', 'day', 'week', 'month'):
+                    response = client.get(f'/log-explore?connection=a&table=t&view=chart&interval={interval}&start=2026-10-08&end=2026-10-10&download=csv')
+                    self.assertEqual(response.status_code, 200)
+                    rows = list(csv.DictReader(io.StringIO(response.data.decode())))
+                    self.assertEqual(sum(int(row['Records']) for row in rows), 3)
+        finally:
+            app.SERVER_SESSIONS.delete(token)
+
 
 if __name__ == '__main__':
     unittest.main()

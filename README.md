@@ -93,3 +93,11 @@ Set `ERROR_ARCHIVER_IMPORT_LEGACY=1` only for the first migration into an empty 
 - The systemd timer wakes every minute; the worker applies the configured interval without a service restart.
 
 View worker activity with `journalctl -u error-log-archiver.service`.
+
+### Log Explore
+
+Open **Log Explore**, choose a saved archive connection and one of its configured tables. No archive connection or Vault lookup is made until a table is selected. JSON objects and arrays expand into columns such as `payload.message` and `payload.tags[0]`; fields available on the current page determine its columns. Search matches literal text across stored fields; column headings sort the whole selected archive in MySQL. Page sizes are 25, 50, 100 or 250. Previous/Next and the page-number control browse results without a full row count. Drag column headings and resize their edges; layouts persist in your browser per connection/table. The reset icon restores the layout. The download icon exports the displayed page as CSV with expanded fields.
+
+Choose **Bar chart** to count records using `event_time`, grouped by hour, day, Monday-based week or month in UTC. Select an inclusive date range (up to 367 days) and apply the search filter if needed. Empty intervals appear as zero; charts are limited to 1,000 buckets. Hover over bars for counts, expand the counts table or download the aggregation as CSV. Boundary weeks/months count only records within the selected dates.
+
+Reads use bounded pages and charts use a timestamp range. Text searches and JSON field sorts can still scan matching rows on large archives; use a shorter chart range when needed. Browsing is read-only and does not change job settings or checkpoints.

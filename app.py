@@ -721,5 +721,9 @@ def execution_override():
     return redirect(url_for('configuration'))
 
 
+from modules.log_explorer import register as register_log_explorer
+register_log_explorer(app, login_required, render_dashboard)
+
+
 if __name__ == "__main__":
     app.run(host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8080")), threaded=True)

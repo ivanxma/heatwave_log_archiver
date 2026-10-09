@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block content %}
+<section>
+<h1>Log Explore</h1>
+<form method="get" class="table-controls" id="explore-controls">
+<label>Archive connection <select name="connection" onchange="this.form.elements.table.value='';this.form.submit()"><option value="">Select connection</option>{% for item in connections %}<option value="{{ item.name }}" {{ 'selected' if item.name == selected_connection else '' }}>{{ item.name }}</option>{% endfor %}</select></label>
+<label>Archive table <select name="table" onchange="this.form.submit()"><option value="">Select table</option>{% for item in tables %}<option value="{{ item.name }}" {{ 'selected' if item.name == selected_table else '' }}>{{ item.archive_db }}.{{ item.archive_table }}</option>{% endfor %}</select></label>
+<label>Search <input name="q" value="{{ query }}" placeholder="Search log fields"></label>
+<label>View <select name="view" onchange="this.form.submit()"><option value="table" {{ 'selected' if view == 'table' else '' }}>Table</option><option value="chart" {{ 'selected' if view == 'chart' else '' }}>Bar chart</option></select></label>
+{% if view == 'chart' %}
+<label>Interval <select name="interval">{% for choice in ['hour','day','week','month'] %}<option value="{{ choice }}" {{ 'selected' if interval == choice else '' }}>{{ choice|capitalize }}</option>{% endfor %}</select></label>
+<label>From (UTC) <input type="date" name="start" value="{{ start }}" required></label><label>Through (UTC) <input type="date" name="end" value="{{ end }}" required></label>
+{% else %}
+<label>Rows per page <select name="size" onchange="this.form.submit()">{% for count in [25,50,100,250] %}<option {{ 'selected' if size == count else '' }}>{{ count }}</option>{% endfor %}</select></label>
+<input type="hidden" name="sort" value="{{ sort }}"><input type="hidden" name="direction" value="{{ direction }}">
+{% endif %}
+<button>Apply</button>
+</form>
+</section>
+{% if selected_table %}
+<section>
+<div class="table-toolbar"><span>{% if view == 'table' %}Page {{ page }} · {{ rows|length }} records{% else %}{{ buckets|sum(attribute='count') }} records · {{ buckets|length }} {{ interval }} buckets{% endif %}</span><div class="table-icons"><a class="icon-button" href="{{ link(download='csv') }}" title="Download {{ 'displayed page' if view == 'table' else 'chart counts' }} as CSV" aria-label="Download CSV">⇩</a>{% if view == 'table' %}<button type="button" class="icon-button" data-reset-table="explore-table" title="Reset column layout" aria-label="Reset column layout">↺</button>{% endif %}</div></div>
+{% if view == 'table' %}
+<p>Click a column heading to sort across the archive. Drag headings to rearrange; drag their edges to resize. Click a cell to read its full value.</p>
+<div class="tablewrap"><table id="explore-table" class="listing-table fixed-rows" data-layout-key="explore-{{ selected_connection }}-{{ selected_table }}"><thead><tr>{% for path,label,encoded in headers %}<th data-column-key="{{ encoded }}" aria-sort="{{ ('ascending' if direction == 'asc' else 'descending') if sort == encoded else 'none' }}"><a href="{{ link(sort=encoded, direction='desc' if sort == encoded and direction == 'asc' else 'asc', page=1) }}">{{ label }}{{ (' ▲' if direction == 'asc' else ' ▼') if sort == encoded else '' }}</a></th>{% endfor %}</tr></thead><tbody>{% for row in rows %}<tr>{% for path,label,encoded in headers %}<td class="expandable-cell" data-full="{{ row.get(path, '') if row.get(path) is not none else '' }}">{{ row.get(path, '') if row.get(path) is not none else '' }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+{% if not rows %}<p>No records found.</p>{% endif %}
+<nav class="pagination" aria-label="Data pages">{% if page > 1 %}<a href="{{ link(page=page-1) }}">Previous</a>{% endif %}<form method="get">{% for key,value in request.args.items() if key not in ['page','download'] %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}<label>Page <input type="number" name="page" min="1" max="100000" value="{{ page }}" style="width:6rem"></label><button>Go</button></form>{% if more %}<a href="{{ link(page=page+1) }}">Next</a>{% endif %}</nav>
+{% else %}
+<p>Record counts by {{ interval }} in UTC. Weeks begin on Monday. Empty intervals have zero records.</p>
+{% if buckets %}<div class="tablewrap"><svg role="img" aria-label="Archive records by {{ interval }}" viewBox="0 0 {{ [720,buckets|length * 36 + 100]|max }} 320" style="min-width:720px;width:{{ [720,buckets|length * 36 + 100]|max }}px;height:320px"><line x1="65" y1="260" x2="{{ [720,buckets|length * 36 + 100]|max - 10 }}" y2="260" stroke="#94a3b8"/>{% set peak = [1,buckets|map(attribute='count')|max]|max %}<text x="5" y="25">{{ peak }}</text><text x="35" y="260">0</text>{% for bucket in buckets %}{% set height = bucket.count / peak * 230 %}<rect x="{{ 75 + loop.index0 * 36 }}" y="{{ 260 - height }}" width="26" height="{{ height }}" fill="#a71925"><title>{{ bucket.time }} UTC: {{ bucket.count }} records</title></rect>{% if loop.index0 % ([1,(buckets|length / 12)|int]|max) == 0 %}<text transform="translate({{ 75 + loop.index0 * 36 }},275) rotate(25)" font-size="10">{{ bucket.time }}</text>{% endif %}{% endfor %}</svg></div><details><summary>View counts as table</summary><div class="tablewrap"><table><thead><tr><th>Time (UTC)</th><th>Records</th></tr></thead><tbody>{% for bucket in buckets %}<tr><td>{{ bucket.time }}</td><td>{{ bucket.count }}</td></tr>{% endfor %}</tbody></table></div></details>{% else %}<p>No records found in this date range.</p>{% endif %}
+{% endif %}
+</section>
+{% else %}<section><p>Select an archive connection and table to explore its logs.</p></section>{% endif %}
+{% endblock %}
