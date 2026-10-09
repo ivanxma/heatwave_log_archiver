@@ -216,6 +216,28 @@ def job_settings_export():
     return Response(json.dumps(settings, indent=2) + '\n', mimetype='application/json', headers={'Content-Disposition': 'attachment; filename="job-settings.json"', 'Cache-Control': 'no-store'})
 
 
+@app.post('/job-settings/import')
+@profile_manager_required
+def job_settings_import():
+    try:
+        from modules.settings_import import parse_settings
+        if request.form.get('confirm_import') != 'yes':
+            raise ValueError('Confirm importing the saved job policy and connections first.')
+        upload = request.files.get('settings_file')
+        if not upload or not upload.filename:
+            raise ValueError('Choose an exported job-settings.json file.')
+        candidate = parse_settings(upload.stream)
+        with archive_execution_lock() as acquired:
+            if not acquired:
+                raise ValueError('An archive execution is active. Retry after it finishes.')
+            control_store.save_settings(candidate, require_empty=True)
+        clear_credential_cache()
+        flash('Job settings imported into the control database. The saved enable state applies to the next scheduled run.', 'success')
+    except Exception as exc:
+        flash(f'Import was not accepted: {exc}', 'error')
+    return redirect(url_for('configuration'))
+
+
 @app.route("/initial-setup", methods=["GET", "POST"])
 @profile_manager_required
 def initial_setup():

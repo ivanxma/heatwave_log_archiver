@@ -69,6 +69,8 @@ The connection profile identifies the MySQL archive control server. Job settings
 
 Use **Export worker control profile JSON** to download a password-free `profiles.json` containing the active control profile, schema and credential Secret OCID. Install it on another Compute as `/var/lib/error-log-archiver/profiles.json`, owned by `errorlogarchiver` with mode `0600`. That worker retrieves all operational settings from the shared schema. **Export job settings JSON** downloads the policy and source/archive definitions as a portable configuration snapshot, without plaintext credentials; it is not a replacement for the worker bootstrap profile.
 
+To restore that snapshot into a fresh control database, configure and validate its control connection first, then open **Job configuration → Import job settings into a fresh control database**. Select `job-settings.json`, confirm the saved scheduler enable state, and import. Validation runs before the transaction writes settings. Existing configuration is never overwritten. History, extraction checkpoints, archive data, and the local control profile are not restored by this settings import; see [restoring settings](docs/archive-control-database.md#restoring-job-settings-into-a-fresh-control-schema).
+
 Setup can bootstrap an already-defined local profile non-interactively:
 
 ```bash

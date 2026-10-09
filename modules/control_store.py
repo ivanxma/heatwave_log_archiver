@@ -113,7 +113,7 @@ def load_settings():
             cur.close()
 
 
-def save_settings(settings):
+def save_settings(settings, *, require_empty=False):
     # Validate and strip any accidental plaintext password fields recursively.
     def clean(value):
         if isinstance(value, dict):
@@ -125,8 +125,16 @@ def save_settings(settings):
     with connection() as conn:
         cur = conn.cursor()
         try:
-            cur.execute(f"SELECT id FROM {table('control_settings')} WHERE id=1 FOR UPDATE")
-            cur.fetchone()
+            cur.execute(f"SELECT payload FROM {table('control_settings')} WHERE id=1 FOR UPDATE")
+            row = cur.fetchone()
+            if not row:
+                raise ValueError('Initialize the control schema before saving settings.')
+            if require_empty:
+                if decode(row[0]):
+                    raise ValueError('Import requires an empty control schema; existing settings were not overwritten.')
+                cur.execute(f"SELECT COUNT(*) FROM {table('control_entities')}")
+                if cur.fetchone()[0]:
+                    raise ValueError('Import requires an empty control schema; existing connection records were not overwritten.')
             cur.execute(f"UPDATE {table('control_settings')} SET payload=%s WHERE id=1", (json.dumps({k: v for k, v in settings.items() if k not in ENTITY_KEYS}),))
             cur.execute(f"DELETE FROM {table('control_entities')}")
             for kind in ENTITY_KEYS:

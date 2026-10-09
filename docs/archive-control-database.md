@@ -61,6 +61,18 @@ Install the same app version, create its local control connection profile, and u
 
 The second Compute does not need copies of settings, source/archive connections, history or checkpoints. Both Computes retrieve those from MySQL. Each web process has its own login sessions; sessions are not shared between hosts.
 
+## Restoring job settings into a fresh control schema
+
+1. Create/select the new control connection profile and initialize an empty control schema using **Control DB**. Test the worker credential Secret OCID first.
+2. Open **Job configuration** before creating an archive destination or other settings in that schema.
+3. Expand **Import job settings into a fresh control database**, select the exported `job-settings.json` (maximum 2 MiB), and confirm restoration including its saved scheduler enable state.
+4. Click **Import job settings JSON**. The app checks JSON types, credential references, table identifiers, connection references and mappings without retrieving source/archive secrets. It obtains the shared execution lock, verifies the target is empty under a transactional row lock, and saves all policy and entity records in one transaction.
+5. Check the configuration tabs and export again to verify the restored settings. An imported enabled policy applies on the next scheduled worker tick.
+
+Files with plaintext passwords/private keys/tokens, worker `profiles.json` exports, invalid mappings, oversized files, and nonempty targets are rejected without replacing configuration. An active execution prevents import until it releases its lock. This action never changes the target control connection profile or imports execution history/checkpoints.
+
+Archived data remains on the destinations referenced by the imported settings. This import does not recreate an entire database backup. A fresh control schema has no extraction checkpoints, so its first run reads from the retention floor and relies on existing archive fingerprints to suppress repeated records. The explicit Compute-JSON migration described above additionally restores history and checkpoints; the settings export/import is deliberately a configuration-only restore.
+
 ## Shared scheduling, locking and override
 
 Every archive execution obtains a nonblocking MySQL `GET_LOCK` using a name derived from the control schema, on a dedicated connection. The lock is shared across web processes and Compute instances connected to the same MySQL server and schema. A busy lock is not bypassed.

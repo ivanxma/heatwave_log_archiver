@@ -4,6 +4,14 @@
   <h1>Archive configuration</h1>
   <p>Define reusable connections and tables, then map each source table to exactly one archive table.</p>
   <p><a href="{{ url_for('job_settings_export') }}">Export job settings JSON</a> · <a href="{{ url_for('control_profile_export') }}">Export worker control profile JSON</a></p>
+  <details><summary>Import job settings into a fresh control database</summary>
+    <p>Restore the saved policy, source/archive connections, tables and mappings from an exported JSON file. The control schema must be empty. Its connection profile, history and checkpoints are not imported.</p>
+    <form method="post" action="{{ url_for('job_settings_import') }}" enctype="multipart/form-data" class="config">
+      <label>Job settings JSON *<input type="file" name="settings_file" accept=".json,application/json" required></label>
+      <label class="checkbox-field"><input type="checkbox" name="confirm_import" value="yes" required><span>Restore these settings, including the saved scheduler enable state</span></label>
+      <button>Import job settings JSON</button>
+    </form>
+  </details>
   {% if execution.get('id') %}
   <form method="post" action="{{ url_for('execution_override') }}">
     <input type="hidden" name="execution_id" value="{{ execution.id }}">

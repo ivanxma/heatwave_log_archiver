@@ -8,5 +8,6 @@
 <div class="form-actions"><button name="control_action" value="test">Test / validate Secret OCID</button><button name="control_action" value="save">Create or connect control schema</button></div></form>
 {% if profile.get('control_schema') and profile.get('secret_ocid') %}<p><a href="{{ url_for('control_profile_export') }}">Export worker control profile JSON</a> · <a href="{{ url_for('job_settings_export') }}">Export job settings JSON</a></p>{% endif %}
 <p>Only the control connection profile stays on Compute. Passwords remain in Vault and server memory. Connecting an existing schema loads its settings; importing never replaces an existing configuration.</p>
+{% if profile.get('control_schema') %}<p>Restoring a settings export into a fresh schema? Open <a href="{{ url_for('configuration') }}">Job configuration</a> and select <strong>Import job settings into a fresh control database</strong>.</p>{% endif %}
 </section>
 {% endblock %}

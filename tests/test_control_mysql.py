@@ -137,6 +137,23 @@ class ControlMySQLTests(unittest.TestCase):
         finally:
             app.SERVER_SESSIONS.delete(token)
 
+    def test_ui_import_into_fresh_database_roundtrips_and_rejects_overwrite(self):
+        import app
+        import io
+        token = app.SERVER_SESSIONS.create('compute-control-test', self.user, self.password, {**self.profile, 'profile_management': True})
+        try:
+            snapshot = {'enabled': False, 'configured': True, 'source_connections': [{'name': 'source', 'host': 'source.example', 'secret_ocid': 'ocid1.vaultsecret.source'}], 'archive_connections': [{'name': 'archive', 'host': 'archive.example', 'secret_ocid': 'ocid1.vaultsecret.archive'}], 'source_tables': [{'name': 's', 'connection': 'source', 'source': 'performance_schema.error_log', 'timestamp_column': 'LOGGED'}], 'archive_tables': [{'name': 'a', 'connection': 'archive', 'archive_db': 'archivedb', 'archive_table': 'logs'}], 'source_mappings': [{'name': 'm', 'source_table': 's', 'archive_table_ref': 'a', 'enabled': 'true'}]}
+            with app.app.test_client() as client:
+                with client.session_transaction() as session:
+                    session.update(connection_id=token, session_scope='error-log-archiver', csrf_token='test-csrf')
+                for expected in (b'Job settings imported', b'empty control schema'):
+                    response = client.post('/job-settings/import', data={'csrf_token': 'test-csrf', 'confirm_import': 'yes', 'settings_file': (io.BytesIO(json.dumps(snapshot).encode()), 'job-settings.json')}, follow_redirects=True)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn(expected, response.data)
+                    self.assertEqual(client.get('/job-settings.json').json, snapshot)
+        finally:
+            app.SERVER_SESSIONS.delete(token)
+
 
 if __name__ == '__main__':
     unittest.main()

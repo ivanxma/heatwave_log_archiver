@@ -89,8 +89,8 @@ class ArchiveConfig:
     schedule: str
 
     @classmethod
-    def from_env(cls, resolve_source_secret: bool = True, resolve_archive_secret: bool = True) -> "ArchiveConfig":
-        settings = _settings()
+    def from_env(cls, resolve_source_secret: bool = True, resolve_archive_secret: bool = True, *, settings: dict[str, object] | None = None) -> "ArchiveConfig":
+        settings = _settings() if settings is None else settings
         source_host = _value("ERROR_ARCHIVER_SOURCE_HOST", "127.0.0.1", settings)
         source_user = _value("ERROR_ARCHIVER_SOURCE_USER", settings=settings)
         archive_user = _value("ERROR_ARCHIVER_ARCHIVE_USER", source_user, settings)

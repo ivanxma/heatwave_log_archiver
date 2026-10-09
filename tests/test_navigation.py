@@ -1,6 +1,7 @@
 """Navigation must stay independent of database and Vault availability."""
 import json
 import copy
+import io
 import os
 import tempfile
 import unittest
@@ -35,7 +36,9 @@ class NavigationTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             session.update(connection_id=token, session_scope="error-log-archiver", csrf_token="test-csrf")
 
-    def save(self, settings):
+    def save(self, settings, *, require_empty=False):
+        if require_empty and self.settings:
+            raise ValueError('Import requires an empty control schema')
         self.settings = copy.deepcopy(settings)
 
     def test_expired_health_result_does_not_block_menu_pages(self):
@@ -163,6 +166,24 @@ class NavigationTests(unittest.TestCase):
             response = self.client.post('/execution/override', data={'csrf_token': 'test-csrf', 'execution_id': 'current'})
             self.assertEqual(response.status_code, 302)
             cancel.assert_called_once_with('current')
+
+    def test_import_restores_export_into_fresh_control_schema(self):
+        exported = self.client.get('/job-settings.json').json
+        exported.update(enabled=False, source_secret_ocid='ocid1.vaultsecret.source')
+        self.settings = {}
+        from contextlib import nullcontext
+        with patch('app.test_mysql_connection'), patch('app.archive_execution_lock', return_value=nullcontext(True)), patch('modules.config.vault_credential', side_effect=AssertionError('Unexpected Vault')):
+            response = self.client.post('/job-settings/import', data={'csrf_token': 'test-csrf', 'confirm_import': 'yes', 'settings_file': (io.BytesIO(json.dumps(exported).encode()), 'job-settings.json')}, follow_redirects=True)
+            self.assertIn(b'Job settings imported', response.data)
+            self.assertEqual(self.client.get('/job-settings.json').json, exported)
+
+    def test_import_rejects_existing_configuration(self):
+        before = copy.deepcopy(self.settings)
+        from contextlib import nullcontext
+        with patch('app.test_mysql_connection'), patch('app.archive_execution_lock', return_value=nullcontext(True)):
+            response = self.client.post('/job-settings/import', data={'csrf_token': 'test-csrf', 'confirm_import': 'yes', 'settings_file': (io.BytesIO(b'{"enabled":false}'), 'job-settings.json')}, follow_redirects=True)
+            self.assertIn(b'empty control schema', response.data)
+        self.assertEqual(self.settings, before)
 
 
 if __name__ == "__main__":
