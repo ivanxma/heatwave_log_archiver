@@ -16,9 +16,18 @@ An operator can also add multiple custom tables or views with a configured times
 
 ## Deployment topology
 
-The deployment diagram shows the OCI Compute services, OCI Vault/IAM, MySQL roles, and network connections. Blue connections represent web operations, green connections represent scheduled archival, purple dashed connections represent secret retrieval and IAM authorization, and gray connections represent local invocation, bootstrap, and logging.
+The OCI deployment diagram below uses Oracle's official service icons to show the Compute VM, IAM, Vault, operator, NSG, and MySQL roles alongside the application components running on the VM.
 
-![MySQL Log Archiver deployment architecture](diagrams/deployment-architecture.png)
+[![MySQL Log Archiver OCI deployment architecture using the official Oracle icon library](diagrams/deployment-architecture.png)](diagrams/deployment-architecture.png)
+
+*Figure 1. OCI deployment architecture. Select the diagram to view the full-size PNG.*
+
+| Diagram connection | Deployment behavior |
+| --- | --- |
+| Blue: operator and web operations | The browser connects to the console over HTTPS port 443. The console reads and updates the control schema, and accesses the archive for setup, reports, and exploration. |
+| Green: archival database operations | Archive execution reads control policy and state, acquires the shared lock, streams source rows, writes archive rows, maintains partitions, and publishes checkpoints after successful commits. |
+| Purple dashed: secrets and authorization | OCI IAM authorizes the VM dynamic group to read selected Vault secret bundles. Application processes retrieve credentials using the VM instance principal over HTTPS. |
+| Gray: local invocation, bootstrap, and logging | The systemd timer invokes the worker, the console supports manual execution, local profiles bootstrap the control connection, and execution logs go to the systemd journal. |
 
 Open the [editable draw.io diagram](diagrams/deployment-architecture.drawio) in draw.io Desktop or diagrams.net to update it. After editing, export its PNG preview to `diagrams/deployment-architecture.png` so this document displays the current architecture.
 
