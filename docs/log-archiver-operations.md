@@ -217,6 +217,16 @@ journalctl -u error-log-archiver.service -n 100 --no-pager
 journalctl -u error-log-archiver-web.service -n 100 --no-pager
 ```
 
+**Job configuration** provides a TabView with **Scheduler setup**, **Service status**, and **Logs**. Service status queries the three local units above; Logs reads their journal, newest first, for the selected service and time window (15 minutes, 1 hour, 24 hours, or 7 days), capped at 50/100/250/500 entries. Refresh is explicit. These views require a management profile and do not query shared configuration or OCI Vault. They describe this Compute, rather than every Compute sharing the control database.
+
+The web unit receives the `systemd-journal` supplementary group for read-only journal access; it receives no sudo or service-control privileges. Only allowlisted units and options are accepted; commands have a five-second timeout. Output is escaped, common credential assignments and the current login password are redacted, and individual messages are limited to 8,000 characters. Redaction is best-effort: administrators should keep secrets out of application logs. Unsupported hosts or missing journal permissions show an explanatory error. Existing deployments must install the updated unit and restart web:
+
+```bash
+sudo install -m 0644 systemd/error-log-archiver-web.service /etc/systemd/system/error-log-archiver-web.service
+sudo systemctl daemon-reload
+sudo systemctl restart error-log-archiver-web.service
+```
+
 The one-shot worker being inactive after a successful run is normal. Inspect its last exit status and journal when investigating a failed summary. Confirm selected archive partitions, retention, saved enable state, Secret OCIDs, endpoint connectivity and database grants.
 
 For code/dependency/service changes, use the documented rerunnable `setup.sh` update procedure after a fast-forward pull; it stops timer/web and refuses dependency replacement while a worker is active. For documentation-only updates, a fast-forward deployment pull is sufficient; it does not require a worker restart or interrupt an archive transaction.
@@ -228,3 +238,7 @@ python -m unittest discover -s tests -v
 ```
 
 The opt-in control-MySQL suite creates and drops a disposable `archiver_test_*` schema. It covers cross-process state/locks, crash cleanup, cancellation, import protection and real JSON sort/search/time aggregation. It does not mutate the production control configuration. Source extraction tests cover timestamp ties, replay deduplication and write failures; they do not establish every source's query plan or availability guarantee.
+
+### Chart timestamp selection
+
+Log Explore shows a separate **Bar chart options** section beneath the View selector when Bar chart is selected. The X-axis uses either `event_time` (when the source event occurred, default) or `archived_at` (when the archive row was inserted). Hour/day/week/month grouping and the inclusive UTC date range both use the chosen column; CSV labels identify it. Filter rules still apply independently. Replayed duplicates retain their original archive insertion time. Missing timestamp columns show a validation error. The archive partition layout remains based on `event_time`, so selecting `archived_at` may scan more partitions unless an independent event-time rule restricts them.

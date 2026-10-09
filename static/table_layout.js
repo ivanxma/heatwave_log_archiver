@@ -48,7 +48,7 @@
 
 // Keep the shared Tab View accessible as well as visually selected.
 document.querySelectorAll('[data-tab-view]').forEach((view) => {
-  const tabs = [...view.querySelectorAll('[role=tab]')];
+  const tabs = [...view.querySelectorAll('[role=tab]')].filter(tab => tab.closest('[data-tab-view]') === view);
   const select = (selected) => tabs.forEach((tab) => tab.setAttribute('aria-selected', String(tab === selected)));
   tabs.forEach((tab) => tab.addEventListener('click', () => select(tab)));
   select(tabs.find((tab) => tab.classList.contains('active')) || tabs[0]);

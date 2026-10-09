@@ -51,6 +51,18 @@ class NavigationTests(unittest.TestCase):
             mysql.assert_not_called()
             vault.assert_not_called()
 
+    def test_monitor_tabs_do_not_query_control_database_or_vault(self):
+        with patch('modules.control_store.load_settings', side_effect=AssertionError('Control query')), patch('modules.config.vault_credential', side_effect=AssertionError('Vault')), patch('modules.service_monitor.service_status', return_value=[]) as status, patch('modules.service_monitor.journal_entries', return_value=[{'time':'now','unit':'error-log-archiver.service','priority':'Info','message':'<script>alert(1)</script>'}]) as logs:
+            self.assertEqual(self.client.get('/configuration?job_tab=services').status_code, 200)
+            response = self.client.get('/configuration?job_tab=logs')
+            self.assertEqual(response.status_code, 200)
+            self.assertNotIn(b'<script>alert(1)</script>', response.data)
+            self.assertIn(b'&lt;script&gt;', response.data)
+            status.assert_called_once()
+            self.assertEqual(logs.call_args.kwargs['secrets'], ['private-password'])
+        with app.app.test_client() as client:
+            self.assertEqual(client.get('/configuration?job_tab=logs').status_code, 302)
+
     def test_form_action_still_checks_expired_health_result(self):
         with patch("app.test_mysql_connection", side_effect=RuntimeError("Database unavailable")) as mysql:
             response = self.client.post("/configuration", data={"csrf_token": "test-csrf"})

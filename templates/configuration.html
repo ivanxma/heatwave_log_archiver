@@ -1,7 +1,14 @@
 {% extends 'base.html' %}
 {% block content %}
+<section><h1>Job configuration</h1><p>Configure jobs and inspect services and journal logs on this Compute.</p></section>
+<section class="tab-view" data-tab-view data-job-tabs>
+<div class="tab-list" role="tablist" aria-label="Job configuration views">
+{% for key,label in [('scheduler','Scheduler setup'),('services','Service status'),('logs','Logs')] %}<button type="button" class="tab {{ 'active' if selected_job_tab == key else '' }}" role="tab" aria-selected="{{ 'true' if selected_job_tab == key else 'false' }}" aria-controls="job-{{ key }}" data-job-tab="{{ key }}">{{ label }}</button>{% endfor %}
+</div>
+<div class="tab-panel" id="job-scheduler" {{ 'hidden' if selected_job_tab != 'scheduler' else '' }}>
+{% if selected_job_tab == 'scheduler' %}
 <section>
-  <h1>Archive configuration</h1>
+  <h2>Scheduler setup</h2>
   <p>Define reusable connections and tables, then map each source table to exactly one archive table.</p>
   <p><a href="{{ url_for('job_settings_export') }}">Export job settings JSON</a> · <a href="{{ url_for('control_profile_export') }}">Export worker control profile JSON</a></p>
   <details><summary>Import job settings into a fresh control database</summary>
@@ -71,6 +78,27 @@
     </form>
   </div>
 </section>
+{% endif %}
+</div>
+<div class="tab-panel" id="job-services" {{ 'hidden' if selected_job_tab != 'services' else '' }}>
+{% if selected_job_tab == 'services' %}
+<div class="table-toolbar"><h2>Service status</h2><a class="icon-button" href="{{ url_for('configuration', job_tab='services') }}" title="Refresh service status" aria-label="Refresh service status">↻</a></div>
+<p>Local Compute · observed {{ observed_at }}. The archive worker is a one-shot service; inactive between runs is normal.</p>
+{% if monitor_error %}<div class="flash error" role="alert">{{ monitor_error }}</div>{% endif %}
+<div class="tablewrap"><table id="service-status-table" class="listing-table"><thead><tr><th>Service</th><th>Enabled</th><th>State</th><th>Substate</th><th>Last result / exit</th><th>Last activity</th><th>Logs</th></tr></thead><tbody>{% for item in service_status %}<tr><td>{{ item.label }}<small class="service-unit">{{ item.unit }}</small></td><td>{{ item.get('UnitFileState') or '—' }}</td><td><span class="service-state {{ item.get('ActiveState') }}">{{ item.get('ActiveState') or '—' }}</span>{% if item.get('LoadState') != 'loaded' %}<small class="service-unit">{{ item.get('LoadState') }}</small>{% endif %}</td><td>{{ item.get('SubState') or '—' }}</td><td>{{ item.get('Result') or '—' }}{% if item.get('ExecMainStatus') %} / {{ item.ExecMainStatus }}{% endif %}</td><td>{{ item.get('LastTriggerUSec') or item.get('InactiveEnterTimestamp') or item.get('ActiveEnterTimestamp') or '—' }}</td><td><a href="{{ url_for('configuration', job_tab='logs', unit=item.key) }}">View logs</a></td></tr>{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+<div class="tab-panel" id="job-logs" {{ 'hidden' if selected_job_tab != 'logs' else '' }}>
+{% if selected_job_tab == 'logs' %}
+<h2>Journal logs</h2><p>Local Compute · newest entries first · timestamps in UTC.</p>
+<form method="get" class="table-toolbar"><input type="hidden" name="job_tab" value="logs"><div class="table-controls"><label>Service <select name="unit"><option value="all" {{ 'selected' if selected_unit == 'all' else '' }}>All archiver services</option>{% for key,item in units.items() %}<option value="{{ key }}" {{ 'selected' if selected_unit == key else '' }}>{{ item[0] }}</option>{% endfor %}</select></label><label>Time window <select name="window">{% for key in windows %}<option value="{{ key }}" {{ 'selected' if selected_window == key else '' }}>{{ {'15min':'Last 15 minutes','1hour':'Last hour','24hours':'Last 24 hours','7days':'Last 7 days'}[key] }}</option>{% endfor %}</select></label><label>Entries <select name="limit">{% for count in [50,100,250,500] %}<option {{ 'selected' if journal_limit == count else '' }}>{{ count }}</option>{% endfor %}</select></label><button>Apply</button></div><button type="submit" class="icon-button" title="Refresh journal logs" aria-label="Refresh journal logs">↻</button></form>
+{% if monitor_error %}<div class="flash error" role="alert">{{ monitor_error }}</div>{% endif %}
+<p>{{ journal_entries|length }} entries · observed {{ observed_at }}</p>
+<div class="tablewrap"><table id="journal-log-table" class="listing-table"><thead><tr><th>Time (UTC)</th><th>Service</th><th>Level</th><th>Message</th></tr></thead><tbody>{% for entry in journal_entries %}<tr><td>{{ entry.time }}</td><td>{{ entry.unit }}</td><td>{{ entry.priority }}</td><td class="journal-message"><pre>{{ entry.message }}</pre></td></tr>{% else %}{% if not monitor_error %}<tr><td colspan="4">No journal entries in the selected time window.</td></tr>{% endif %}{% endfor %}</tbody></table></div>
+{% endif %}
+</div>
+</section>
+<script>document.querySelectorAll('[data-job-tab]').forEach(tab=>tab.addEventListener('click',()=>{if(tab.dataset.jobTab==='{{ selected_job_tab }}')return;const url=new URL(location.href);url.searchParams.set('job_tab',tab.dataset.jobTab);location.assign(url)}));</script>
 <script>
 document.querySelectorAll('[data-select-all]').forEach((box) => box.addEventListener('change', () => { box.closest('table').querySelectorAll('tbody input[name="selected"]').forEach((input) => { input.checked = box.checked; }); }));
 document.querySelectorAll('[data-edit-selected]').forEach((button) => button.addEventListener('click', () => { const table = document.getElementById(button.dataset.table); const selected = table.querySelectorAll('tbody input[name="selected"]:checked'); if (selected.length !== 1) { window.alert('Select exactly one record to edit.'); return; } window.location.href = '/configuration/' + encodeURIComponent(button.dataset.kind) + '/' + selected[0].value + '?config_tab=' + encodeURIComponent(button.dataset.kind); }));

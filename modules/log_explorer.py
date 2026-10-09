@@ -112,6 +112,7 @@ def register(app, login_required, render_dashboard):
         source_profiles = [{key: item.get(key, '') for key in ('name', 'host', 'port', 'user', 'socket', 'server_uuid', 'server_uuids', 'server_hostname', 'server_hostnames')} for item in settings.get('source_connections', [])]
         view = 'chart' if request.args.get('view') == 'chart' else 'table'
         interval = request.args.get('interval', 'day')
+        time_column = request.args.get('time_column', 'event_time')
         start = request.args.get('start', (datetime.now(timezone.utc).date() - timedelta(days=30)).isoformat())
         end = request.args.get('end', datetime.now(timezone.utc).date().isoformat())
         try:
@@ -162,15 +163,19 @@ def register(app, login_required, render_dashboard):
                         field_options = [('__source_connection__', 'Source connection (multi-select)'), *[(json.dumps(path, ensure_ascii=False), column_label(path)) for path in fields]]
                         where, params = compile_filters(rules, rule_mode, [], columns, source_profiles)
                         if view == 'chart':
-                            if 'event_time' not in columns:
-                                raise ValueError('Chart view requires an event_time column.')
+                            if time_column not in {'event_time', 'archived_at'}:
+                                raise ValueError('Select event_time or archived_at for the X-axis.')
+                            if time_column not in columns:
+                                raise ValueError(f'Chart view requires an {time_column} column.')
+                            axis = ident(time_column)
                             if interval not in INTERVALS:
                                 raise ValueError('Select hour, day, week or month.')
                             first, last = date.fromisoformat(start), date.fromisoformat(end)
                             if not 0 <= (last - first).days <= 366:
                                 raise ValueError('Select a date range of up to 367 days.')
-                            where += (' AND ' if where else ' WHERE ') + '`event_time` >= %s AND `event_time` < %s'
-                            cursor.execute(f'SELECT {INTERVALS[interval]} AS bucket, COUNT(*) AS records FROM {target}{where} GROUP BY bucket ORDER BY bucket', params + (first, last + timedelta(days=1)))
+                            where += (' AND ' if where else ' WHERE ') + f'{axis} >= %s AND {axis} < %s'
+                            bucket_expression = INTERVALS[interval].replace('`event_time`', axis)
+                            cursor.execute(f'SELECT {bucket_expression} AS bucket, COUNT(*) AS records FROM {target}{where} GROUP BY bucket ORDER BY bucket', params + (first, last + timedelta(days=1)))
                             buckets = [{'time': str(item['bucket']), 'count': item['records']} for item in cursor.fetchall()]
                             buckets = fill_buckets(buckets, first, last, interval)
                         else:
@@ -191,7 +196,7 @@ def register(app, login_required, render_dashboard):
                                 value = '' if value is None else str(value)
                                 return "'" + value if value.startswith(('=', '+', '-', '@', '\t', '\r')) else value
                             if view == 'chart':
-                                writer.writerow(['Time (UTC)', 'Records'])
+                                writer.writerow([time_column + ' (UTC)', 'Records'])
                                 writer.writerows((item['time'], item['count']) for item in buckets)
                             else:
                                 writer.writerow([label for _, label, _ in headers])
@@ -210,6 +215,6 @@ def register(app, login_required, render_dashboard):
                 return value if isinstance(value, list) else []
             except ValueError:
                 return []
-        return render_dashboard('log_explore.html', active_menu='log_explore', connections=connections, tables=tables, selected_connection=selected_connection, selected_table=selected_table, source_profiles=source_profiles, rules=rules, rule_sources=rule_sources, rule_mode=rule_mode, field_options=field_options, operators=OPERATORS, source_metadata_available='source_server_uuid' in columns, view=view, interval=interval, start=start, end=end, page=page, size=size, rows=rows, headers=headers, more=more, buckets=buckets, link=link, sort=sort, direction=direction)
+        return render_dashboard('log_explore.html', active_menu='log_explore', connections=connections, tables=tables, selected_connection=selected_connection, selected_table=selected_table, source_profiles=source_profiles, rules=rules, rule_sources=rule_sources, rule_mode=rule_mode, field_options=field_options, operators=OPERATORS, source_metadata_available='source_server_uuid' in columns, view=view, interval=interval, time_column=time_column, start=start, end=end, page=page, size=size, rows=rows, headers=headers, more=more, buckets=buckets, link=link, sort=sort, direction=direction)
 
     app.register_blueprint(bp)

@@ -421,6 +421,24 @@ def execution_history_export_csv():
 @app.route("/configuration", methods=["GET", "POST"])
 @profile_manager_required
 def configuration():
+    selected_job_tab = request.args.get('job_tab', 'scheduler')
+    if selected_job_tab not in {'scheduler', 'services', 'logs'}:
+        selected_job_tab = 'scheduler'
+    if request.method == 'GET' and selected_job_tab != 'scheduler':
+        from modules.service_monitor import UNITS, WINDOWS, MonitorError, service_status, journal_entries
+        status, logs, monitor_error = [], [], None
+        selected_unit = request.args.get('unit', 'all')
+        selected_window = request.args.get('window', '24hours')
+        limit = request.args.get('limit', 100, type=int)
+        try:
+            if selected_job_tab == 'services':
+                status = service_status()
+            else:
+                record = SERVER_SESSIONS.get(session.get('connection_id'))
+                logs = journal_entries(selected_unit, selected_window, limit, secrets=[record['password']])
+        except (MonitorError, ValueError) as exc:
+            monitor_error = str(exc)
+        return render_dashboard('configuration.html', active_menu='configuration', selected_job_tab=selected_job_tab, service_status=status, journal_entries=logs, monitor_error=monitor_error, units=UNITS, windows=WINDOWS, selected_unit=selected_unit, selected_window=selected_window, journal_limit=limit, observed_at=datetime.now(timezone.utc).isoformat(timespec='seconds'))
     fields = ("source_secret_ocid", "archive_secret_ocid", "source_host", "source_port", "source_user", "source_socket", "archive_host", "archive_port", "archive_user", "archive_socket", "archive_db", "archive_table", "retention_months", "batch_size", "worker_threads", "schedule")
     if request.method == "POST":
         original = _settings()
@@ -451,7 +469,7 @@ def configuration():
     selected_config_tab = request.args.get("config_tab", "source-connections")
     if selected_config_tab not in _ENTITY_FIELDS:
         selected_config_tab = "source-connections"
-    return render_dashboard("configuration.html", settings=settings, config=config, source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), selected_config_tab=selected_config_tab, execution=control_store.load_state('execution'), active_menu="configuration")
+    return render_dashboard("configuration.html", settings=settings, config=config, selected_job_tab='scheduler', source_connections=settings.get("source_connections", []), archive_connections=settings.get("archive_connections", []), source_tables=settings.get("source_tables", []), archive_tables=settings.get("archive_tables", []), source_mappings=settings.get("source_mappings", []), selected_config_tab=selected_config_tab, execution=control_store.load_state('execution'), active_menu="configuration")
 
 
 _ENTITY_FIELDS = {

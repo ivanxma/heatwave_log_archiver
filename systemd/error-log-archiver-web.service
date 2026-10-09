@@ -6,6 +6,7 @@ After=network.target
 Type=simple
 User=errorlogarchiver
 Group=errorlogarchiver
+SupplementaryGroups=systemd-journal
 WorkingDirectory=/opt/error-log-archiver
 EnvironmentFile=/etc/error-log-archiver/runtime.env
 Environment=ERROR_ARCHIVER_CONFIG_FILE=/var/lib/error-log-archiver/settings.json

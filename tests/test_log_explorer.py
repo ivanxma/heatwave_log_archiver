@@ -45,7 +45,7 @@ class ExplorerTests(unittest.TestCase):
             def fetchall(inner):
                 sql = self.sql[-1][0]
                 if sql.startswith('SHOW'):
-                    return [{'Field': 'id', 'Type': 'bigint'}, {'Field': 'event_time', 'Type': 'datetime'}, {'Field': 'payload', 'Type': 'json'}]
+                    return [{'Field': 'id', 'Type': 'bigint'}, {'Field': 'event_time', 'Type': 'datetime'}, {'Field': 'archived_at', 'Type': 'datetime'}, {'Field': 'payload', 'Type': 'json'}]
                 if buckets:
                     return [{'bucket': '2026-10-09', 'records': 3}]
                 return [{'id': 1, 'event_time': '2026-10-09', 'payload': '{"message":"<script>alert(1)</script>","code":3}'}]
@@ -80,6 +80,24 @@ class ExplorerTests(unittest.TestCase):
             self.assertIn(b'3 records', response.data)
             self.assertIn('COUNT(*)', self.sql[-1][0])
             self.assertIn('`event_time` >= %s', self.sql[-1][0])
+
+    def test_chart_axis_controls_buckets_range_and_csv_for_every_interval(self):
+        for interval in ('hour', 'day', 'week', 'month'):
+            with self.subTest(interval=interval), self.fake_connection(buckets=True):
+                response = self.client.get('/log-explore', query_string={'connection':'archive', 'table':'logs', 'view':'chart', 'time_column':'archived_at', 'interval':interval, 'start':'2026-10-09', 'end':'2026-10-09'})
+                self.assertEqual(response.status_code, 200)
+                sql = self.sql[-1][0]
+                self.assertIn('`archived_at` >= %s AND `archived_at` < %s', sql)
+                self.assertNotIn('`event_time`', sql)
+                self.assertIn(b'time_column=archived_at', response.data)
+                self.assertIn(b'archived_at</option>', response.data)
+        with self.fake_connection(buckets=True):
+            response = self.client.get('/log-explore?connection=archive&table=logs&view=chart&time_column=archived_at&download=csv')
+            self.assertTrue(response.data.startswith(b'archived_at (UTC),Records'))
+        with self.fake_connection(buckets=True):
+            response = self.client.get('/log-explore?connection=archive&table=logs&view=chart&time_column=evil')
+            self.assertIn(b'Select event_time or archived_at', response.data)
+            self.assertFalse(any('COUNT(*)' in sql for sql, _ in self.sql))
 
     def test_invalid_selection_does_not_open_connection(self):
         with patch('modules.log_explorer.connect') as connect:

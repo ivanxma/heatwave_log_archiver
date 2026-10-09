@@ -14,3 +14,7 @@
 .filter-rule label{min-width:0;max-width:100%}.filter-rule [data-source-rule-values]{width:32rem;max-width:100%;box-sizing:border-box}.filter-rule [data-source-rule-values][hidden]{display:none}
 
 .table-paging{justify-content:flex-start}.table-page-number{width:5rem}.table-paging button:disabled{background:#cbd5e1;color:#64748b;cursor:default}.partition-actions{margin:1rem 0}.table-toolbar>.table-controls{flex:1;min-width:0}
+
+.service-unit{display:block;font-size:.8rem;color:#64748b;overflow-wrap:anywhere}.service-state{display:inline-block;padding:.2rem .55rem;border-radius:999px;background:#e2e8f0;color:#334155}.service-state.active{background:#dcfce7;color:#166534}.service-state.failed{background:#fee2e2;color:#b91c1c}#service-status-table td{overflow-wrap:anywhere}
+#journal-log-table{table-layout:fixed;width:100%;min-width:650px}#journal-log-table th:nth-child(1){width:12rem}#journal-log-table th:nth-child(2){width:15rem}#journal-log-table th:nth-child(3){width:5rem}#journal-log-table td{vertical-align:top;overflow-wrap:anywhere}.journal-message pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;max-height:20rem;overflow:auto}
+.explore-chart-options{flex:0 0 100%;box-sizing:border-box;min-width:0;margin-top:1rem;border:1px solid #d9e0e8;border-radius:.55rem;padding:1rem}.explore-chart-options legend{font-weight:650;padding:0 .4rem}

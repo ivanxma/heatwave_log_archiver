@@ -63,6 +63,7 @@ find "$APP_DIR" -mindepth 1 -maxdepth 1 ! -name .venv -exec chown -R root:root {
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/.venv"
 install -m 0644 "$APP_DIR/systemd/error-log-archiver.service" /etc/systemd/system/error-log-archiver.service
 install -m 0644 "$APP_DIR/systemd/error-log-archiver.timer" /etc/systemd/system/error-log-archiver.timer
+# The web unit reads local journal entries via SupplementaryGroups=systemd-journal.
 install -m 0644 "$APP_DIR/systemd/error-log-archiver-web.service" /etc/systemd/system/error-log-archiver-web.service
 if [[ ! -f "$RUNTIME_DIR/runtime.env" ]]; then
   umask 077
